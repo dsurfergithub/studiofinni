@@ -1,0 +1,71 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+@theme {
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  :root {
+    --bg: #0a0a0f;
+    --surface: #14141c;
+    --surface-elevated: #1c1c28;
+    --border: #252535;
+    --text: #f5f5fa;
+    --muted: #7a7a92;
+    --dim: #4a4a5e;
+    --accent: #b794ff;
+    --accent-strong: #a070ff;
+    --accent-glow: rgba(183,148,255,0.25);
+    --accent-soft: rgba(183,148,255,0.08);
+    --success: #4ade80;
+    --success-soft: rgba(74,222,128,0.1);
+    --danger: #ff5478;
+    --danger-soft: rgba(255,84,120,0.1);
+    --warning: #fbbf24;
+    --safe-top: env(safe-area-inset-top);
+    --safe-bottom: env(safe-area-inset-bottom);
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    overscroll-behavior-y: none;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .text-display {
+    font-family: var(--font-display);
+  }
+  .text-shadow-glow {
+    text-shadow: 0 0 10px var(--accent-glow);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+  }
+  .scroll-area {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
+
+input, textarea, select {
+  font-size: 16px; /* Para evitar el zoom en iOS */
+}
+
