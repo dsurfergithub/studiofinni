@@ -6,10 +6,11 @@ import { parseExcelData } from '../lib/excel/parser';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
 import { getDeterministaColor } from '../lib/colors';
 import { v4 as uuidv4 } from 'uuid';
+import { calcularNombreMes } from '../lib/finmes/finmes';
 
 export function Ajustes() {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { resetState, updateState, state, getMesesActivos } = useStore();
+  const { resetState, updateState, state, getMesesActivos, setSelectedMesId } = useStore();
   const [audioEnabled, setAudioEnabled] = useState(soundsEnabled());
 
   const handleToggleAudio = () => {
@@ -24,22 +25,25 @@ export function Ajustes() {
       alert("No hay meses activos para basarse.");
       return;
     }
-    const lastMes = activeMeses[0]; // Activemeses is sorted newest first usually.
-    const lastDate = new Date(lastMes.fin);
-    if (isNaN(lastDate.getTime())) return;
+    const lastMes = activeMeses[0]; // Activemeses is sorted newest first.
     
-    lastDate.setDate(lastDate.getDate() + 1); // Next day is the start
-    const startStr = lastDate.toISOString().slice(0, 10);
+    // Parse lastMes.fin safely (YYYY-MM-DD) in local-timezone terms
+    const [y, mIndex, d] = lastMes.fin.split('-').map(Number);
     
-    lastDate.setMonth(lastDate.getMonth() + 1); // Approx end
-    lastDate.setDate(lastDate.getDate() - 1);
-    const endStr = lastDate.toISOString().slice(0, 10);
+    // Start of the next month is the day after the last month's end day
+    const startDate = new Date(y, mIndex - 1, d + 1);
+    const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+    
+    // End is roughly 1 month after end of the previous (or start plus 1 month minus 1 day)
+    const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate() - 1);
+    const endStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
 
-    const monthName = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(lastDate);
+    const { nombre: monthName, clave } = calcularNombreMes(startStr, endStr);
 
     const newMes = {
-      id: `mes-${uuidv4().slice(0,6)}`,
+      id: `mes-${clave}`, // Overwrites any derived one for style-consistency
       nombre: monthName,
+      clave: clave,
       inicio: startStr,
       fin: endStr,
       gastosFijos: lastMes.gastosFijos,
@@ -47,11 +51,14 @@ export function Ajustes() {
     };
 
     updateState({
-      mesesPersonalizados: [newMes, ...state.mesesPersonalizados].sort((a,b) => b.inicio.localeCompare(a.inicio))
+      mesesPersonalizados: [newMes, ...(state.mesesPersonalizados || [])].filter(m => m.id !== newMes.id)
     });
 
+    // Automatically focus on the newly created month
+    setSelectedMesId(newMes.id);
+
     playSuccess();
-    alert(`Nuevo mes creado: ${startStr} a ${endStr}`);
+    alert(`Nuevo mes creado y seleccionado: ${monthName} (${startStr} a ${endStr})`);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,9 +85,30 @@ export function Ajustes() {
           const dictMovs = new Set(state.movimientos.map(m => m.hash));
           const nuevosMovs = parsed.movimientos.filter(m => !dictMovs.has(m.hash));
 
+          const todoMovas = [...state.movimientos, ...nuevosMovs];
+
+          // Re-detect anchor income salaries across the whole combined dataset
+          const ingresosRecurrentes = todoMovas.filter(m => m.importe > 0);
+          const nominasMapeo = new Map<string, typeof ingresosRecurrentes[0]>();
+          ingresosRecurrentes.forEach(ing => {
+            const m = ing.fecha.substring(0, 7); // YYYY-MM
+            if (!nominasMapeo.has(m) || nominasMapeo.get(m)!.importe < ing.importe) {
+              nominasMapeo.set(m, ing);
+            }
+          });
+
+          const nominasAncla = Array.from(nominasMapeo.values()).map(m => ({
+            id: m.id || uuidv4(),
+            fecha: m.fecha,
+            importe: m.importe,
+            concepto: m.concepto,
+            movimientoId: m.id
+          })).sort((a,b) => a.fecha.localeCompare(b.fecha));
+
           updateState({
-            movimientos: [...state.movimientos, ...nuevosMovs].sort((a,b) => b.fecha.localeCompare(a.fecha)),
+            movimientos: todoMovas.sort((a,b) => b.fecha.localeCompare(a.fecha)),
             categorias: finalCats,
+            nominasAncla,
             cuenta: {
               ...state.cuenta,
               saldoActual: parsed.saldoActual || state.cuenta.saldoActual,
@@ -88,8 +116,14 @@ export function Ajustes() {
             }
           });
 
+          // Focus on the absolute newest derived month immediately
+          const derived = calcularNombreMes(todoMovas[0]?.fecha || '', todoMovas[0]?.fecha || '');
+          if (derived && derived.clave) {
+            setSelectedMesId(`mes-${derived.clave}`);
+          }
+
           playSuccess();
-          alert(`Importados ${nuevosMovs.length} movimientos nuevos.`);
+          alert(`Importados ${nuevosMovs.length} movimientos nuevos. Se han actualizado los periodos con los datos del Excel.`);
         } catch (err) {
           playError();
           alert((err as Error).message || 'Error parseando Excel');

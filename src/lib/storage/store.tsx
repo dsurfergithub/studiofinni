@@ -15,6 +15,8 @@ interface StoreContextType {
   deleteCategoria: (id: string) => void;
   getMesesActivos: () => MesFinanciero[];
   getSaldoCalculado: () => number;
+  selectedMesId: string;
+  setSelectedMesId: (id: string) => void;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -22,6 +24,21 @@ const StoreContext = createContext<StoreContextType | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(getInitialState());
   const [initDone, setInitDone] = useState(false);
+  const [selectedMesId, setSelectedMesId] = useState('');
+
+  const getMesesActivos = () => {
+    const derived = derivarMeses(state.nominasAncla);
+    const custom = state.mesesPersonalizados || [];
+    
+    // Merge both
+    const all = [...custom, ...derived];
+    
+    // Deduplicate by ID
+    const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
+    
+    // Sort oldest to newest or newest to oldest? Derived sorts newest first
+    return unique.sort((a, b) => b.inicio.localeCompare(a.inicio));
+  };
 
   useEffect(() => {
     setState(loadState());
@@ -34,6 +51,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       saveState(state);
     }
   }, [state, initDone]);
+
+  // Fallback / Auto-select the newest month if selectedMesId is empty
+  const activeMeses = getMesesActivos();
+  useEffect(() => {
+    if (initDone && !selectedMesId && activeMeses.length > 0) {
+      setSelectedMesId(activeMeses[0].id);
+    }
+  }, [initDone, selectedMesId, activeMeses]);
 
   const updateState = (newState: Partial<AppState>) => {
     setState((prev) => ({ ...prev, ...newState }));
@@ -85,20 +110,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const getMesesActivos = () => {
-    const derived = derivarMeses(state.nominasAncla);
-    const custom = state.mesesPersonalizados || [];
-    
-    // Merge both
-    const all = [...custom, ...derived];
-    
-    // Deduplicate by ID
-    const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
-    
-    // Sort oldest to newest or newest to oldest? Derived sorts newest first
-    return unique.sort((a, b) => b.inicio.localeCompare(a.inicio));
-  };
-
   const getSaldoCalculado = () => {
     if (!state.cuenta.fechaSaldo && state.movimientos.length === 0) return 0;
     
@@ -130,6 +141,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         deleteCategoria,
         getMesesActivos,
         getSaldoCalculado,
+        selectedMesId,
+        setSelectedMesId,
       }}
     >
       {children}

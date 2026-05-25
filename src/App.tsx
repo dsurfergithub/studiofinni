@@ -10,15 +10,8 @@ import { Ajustes } from './screens/Ajustes';
 import { Insights } from './screens/Insights';
 
 function AppContent() {
-  const { state, getMesesActivos } = useStore();
+  const { state, selectedMesId, setSelectedMesId } = useStore();
   const [currentTab, setCurrentTab] = useState('dashboard');
-  const [selectedMesId, setSelectedMesId] = useState('');
-
-  // Auto-select newest month if not selected
-  const activeMeses = getMesesActivos();
-  if (!selectedMesId && activeMeses.length > 0) {
-    setSelectedMesId(activeMeses[0].id);
-  }
 
   if (state.movimientos.length === 0 && !state.cuenta.fechaSaldo) {
     return <Onboarding onFinish={() => setCurrentTab('dashboard')} />;
