@@ -6,7 +6,7 @@ import { parseExcelData } from '../lib/excel/parser';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
 import { getDeterministaColor } from '../lib/colors';
 import { v4 as uuidv4 } from 'uuid';
-import { calcularNombreMes } from '../lib/finmes/finmes';
+import { calcularNombreMes, derivarMeses } from '../lib/finmes/finmes';
 
 export function Ajustes() {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -19,6 +19,35 @@ export function Ajustes() {
     setAudioEnabled(next);
   };
 
+  const obtenerProximosMesesParaBase = (baseMes: any, cantidad = 12): any[] => {
+    const generados: any[] = [];
+    let currentFin = baseMes.fin;
+    
+    for (let i = 0; i < cantidad; i++) {
+      const [y, mIndex, d] = currentFin.split('-').map(Number);
+      const startDate = new Date(y, mIndex - 1, d + 1);
+      const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+      
+      const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate() - 1);
+      const endStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+      
+      const { nombre: monthName, clave } = calcularNombreMes(startStr, endStr);
+      
+      generados.push({
+        id: `mes-${clave}`,
+        nombre: monthName,
+        clave: clave,
+        inicio: startStr,
+        fin: endStr,
+        gastosFijos: baseMes.gastosFijos || [],
+        esEstimado: true,
+      });
+      
+      currentFin = endStr;
+    }
+    return generados;
+  };
+
   const handleCreateNextMonth = () => {
     const activeMeses = getMesesActivos();
     if (activeMeses.length === 0) {
@@ -27,38 +56,26 @@ export function Ajustes() {
     }
     const lastMes = activeMeses[0]; // Activemeses is sorted newest first.
     
-    // Parse lastMes.fin safely (YYYY-MM-DD) in local-timezone terms
-    const [y, mIndex, d] = lastMes.fin.split('-').map(Number);
-    
-    // Start of the next month is the day after the last month's end day
-    const startDate = new Date(y, mIndex - 1, d + 1);
-    const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
-    
-    // End is roughly 1 month after end of the previous (or start plus 1 month minus 1 day)
-    const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate() - 1);
-    const endStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+    // Generar automáticamente los próximos 12 periodos mensuales para cubrir todo el resto del año
+    const nuevosFutos = obtenerProximosMesesParaBase(lastMes, 12);
 
-    const { nombre: monthName, clave } = calcularNombreMes(startStr, endStr);
-
-    const newMes = {
-      id: `mes-${clave}`, // Overwrites any derived one for style-consistency
-      nombre: monthName,
-      clave: clave,
-      inicio: startStr,
-      fin: endStr,
-      gastosFijos: lastMes.gastosFijos,
-      esEstimado: true,
-    };
+    const existentes = state.mesesPersonalizados || [];
+    const mapa = new Map();
+    existentes.forEach(m => mapa.set(m.id, m));
+    nuevosFutos.forEach(m => mapa.set(m.id, m));
+    const finalPersonalizados = Array.from(mapa.values()).sort((a,b) => b.inicio.localeCompare(a.inicio));
 
     updateState({
-      mesesPersonalizados: [newMes, ...(state.mesesPersonalizados || [])].filter(m => m.id !== newMes.id)
+      mesesPersonalizados: finalPersonalizados
     });
 
-    // Automatically focus on the newly created month
-    setSelectedMesId(newMes.id);
+    // Enfoque automático en el siguiente periodo inmediato
+    if (nuevosFutos.length > 0) {
+      setSelectedMesId(nuevosFutos[0].id);
+    }
 
     playSuccess();
-    alert(`Nuevo mes creado y seleccionado: ${monthName} (${startStr} a ${endStr})`);
+    alert(`¡Planificación expandida! Se han autogenerado los siguientes 12 periodos mensuales en el selector a partir de ${lastMes.nombre}.`);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,10 +122,25 @@ export function Ajustes() {
             movimientoId: m.id
           })).sort((a,b) => a.fecha.localeCompare(b.fecha));
 
+          const derivedMonths = derivarMeses(nominasAncla);
+          const baseMes = derivedMonths[0]; // El periodo más reciente deducido del excel
+
+          let nuevosFutos: any[] = [];
+          if (baseMes) {
+            nuevosFutos = obtenerProximosMesesParaBase(baseMes, 12);
+          }
+
+          const existentes = state.mesesPersonalizados || [];
+          const mapa = new Map();
+          existentes.forEach(m => mapa.set(m.id, m));
+          nuevosFutos.forEach(m => mapa.set(m.id, m));
+          const finalPersonalizados = Array.from(mapa.values()).sort((a,b) => b.inicio.localeCompare(a.inicio));
+
           updateState({
             movimientos: todoMovas.sort((a,b) => b.fecha.localeCompare(a.fecha)),
             categorias: finalCats,
             nominasAncla,
+            mesesPersonalizados: finalPersonalizados,
             cuenta: {
               ...state.cuenta,
               saldoActual: parsed.saldoActual || state.cuenta.saldoActual,
@@ -117,13 +149,17 @@ export function Ajustes() {
           });
 
           // Focus on the absolute newest derived month immediately
-          const derived = calcularNombreMes(todoMovas[0]?.fecha || '', todoMovas[0]?.fecha || '');
-          if (derived && derived.clave) {
-            setSelectedMesId(`mes-${derived.clave}`);
+          if (derivedMonths.length > 0) {
+            setSelectedMesId(derivedMonths[0].id);
+          } else {
+            const derived = calcularNombreMes(todoMovas[0]?.fecha || '', todoMovas[0]?.fecha || '');
+            if (derived && derived.clave) {
+              setSelectedMesId(`mes-${derived.clave}`);
+            }
           }
 
           playSuccess();
-          alert(`Importados ${nuevosMovs.length} movimientos nuevos. Se han actualizado los periodos con los datos del Excel.`);
+          alert(`Importados ${nuevosMovs.length} movimientos nuevos. Se han actualizado los periodos con los datos de las nóminas del Excel y se han creado los próximos 12 periodos mensuales para planificar el resto del año.`);
         } catch (err) {
           playError();
           alert((err as Error).message || 'Error parseando Excel');
@@ -176,7 +212,7 @@ export function Ajustes() {
           <h3 className="text-xs font-bold text-muted uppercase tracking-wider pl-1">Periodos</h3>
           <Button variant="secondary" className="w-full justify-start py-6 rounded-2xl border-border bg-surface hover:bg-surface-elevated" onClick={handleCreateNextMonth}>
             <CalendarPlus className="mr-3 text-accent" size={20} />
-            Crear próximo periodo (Mes)
+            Planificar resto del año (Próximos 12 periodos)
           </Button>
         </section>
 
