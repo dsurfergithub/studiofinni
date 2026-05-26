@@ -52,13 +52,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [state, initDone]);
 
-  // Fallback / Auto-select the newest month if selectedMesId is empty
+  const getDefaultSelectedMonthId = (mesesList: MesFinanciero[]) => {
+    if (mesesList.length === 0) return '';
+    
+    // 1. If there's a month that contains today's date, use that!
+    const today = new Date().toISOString().slice(0, 10);
+    const todayMes = mesesList.find(m => today >= m.inicio && today <= m.fin);
+    if (todayMes) return todayMes.id;
+
+    // 2. Otherwise, find the newest month that actually has movements in the database.
+    const mesesWithMovs = mesesList.filter(mes => 
+      state.movimientos.some(m => m.fecha >= mes.inicio && m.fecha <= mes.fin)
+    );
+    if (mesesWithMovs.length > 0) {
+      // Return the newest of the ones with movements (since mesesList is sorted newest first)
+      return mesesWithMovs[0].id;
+    }
+
+    // 3. Otherwise, return the first one that is not in the future (i.e. start date <= today)
+    const currentOrPast = mesesList.find(m => m.inicio <= today);
+    if (currentOrPast) return currentOrPast.id;
+
+    // 4. Default to first in list (newest)
+    return mesesList[0].id;
+  };
+
+  // Fallback / Auto-select the smartest month if selectedMesId is empty
   const activeMeses = getMesesActivos();
   useEffect(() => {
     if (initDone && !selectedMesId && activeMeses.length > 0) {
-      setSelectedMesId(activeMeses[0].id);
+      setSelectedMesId(getDefaultSelectedMonthId(activeMeses));
     }
-  }, [initDone, selectedMesId, activeMeses]);
+  }, [initDone, selectedMesId, activeMeses, state.movimientos]);
 
   const updateState = (newState: Partial<AppState>) => {
     setState((prev) => ({ ...prev, ...newState }));
@@ -102,12 +127,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteCategoria = (id: string) => {
     // Re-assign category to "sin-clasificar"
-    setState((prev) => ({
-      ...prev,
-      categorias: prev.categorias.filter((c) => c.id !== id),
-      movimientos: prev.movimientos.map((m) => (m.categoria === id ? { ...m, categoria: 'sin-clasificar' } : m)),
-      budgetTemplate: Object.fromEntries(Object.entries(prev.budgetTemplate).filter(([k]) => k !== id)),
-    }));
+    setState((prev) => {
+      const newOverrides = { ...prev.budgetOverrides };
+      Object.keys(newOverrides).forEach(monthId => {
+        if (newOverrides[monthId]) {
+          newOverrides[monthId] = Object.fromEntries(
+            Object.entries(newOverrides[monthId]).filter(([k]) => k !== id)
+          );
+        }
+      });
+      return {
+        ...prev,
+        categorias: prev.categorias.filter((c) => c.id !== id),
+        movimientos: prev.movimientos.map((m) => (m.categoria === id ? { ...m, categoria: 'sin-clasificar' } : m)),
+        budgetTemplate: Object.fromEntries(Object.entries(prev.budgetTemplate).filter(([k]) => k !== id)),
+        budgetOverrides: newOverrides,
+      };
+    });
   };
 
   const getSaldoCalculado = () => {

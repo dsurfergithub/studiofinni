@@ -23,10 +23,7 @@ export function Presupuesto({ selectedMesId, onChangeMes }: PresupuestoProps) {
   const cMes = activeMeses.find(m => m.id === selectedMesId) || activeMeses[0];
 
   const getPresupuestoCat = (catId: string) => {
-    if (state.budgetOverrides?.[selectedMesId]?.[catId] !== undefined) {
-      return state.budgetOverrides[selectedMesId][catId];
-    }
-    return state.budgetTemplate?.[catId] || 0;
+    return state.budgetOverrides?.[selectedMesId]?.[catId] || 0;
   };
 
   // Get total spent per category in this month (only gastos)
@@ -75,8 +72,14 @@ export function Presupuesto({ selectedMesId, onChangeMes }: PresupuestoProps) {
     const val = parseFloat(amountVal.replace(',', '.'));
     if (isNaN(val) || val < 0) return;
 
-    const newTemplate = { ...state.budgetTemplate, [editingCatId]: val };
-    updateState({ budgetTemplate: newTemplate });
+    const currentMonthOverrides = state.budgetOverrides?.[selectedMesId] || {};
+    const newMonthOverrides = { ...currentMonthOverrides, [editingCatId]: val };
+    const allOverrides = {
+      ...(state.budgetOverrides || {}),
+      [selectedMesId]: newMonthOverrides
+    };
+
+    updateState({ budgetOverrides: allOverrides });
     setEditorOpen(false);
   };
   
