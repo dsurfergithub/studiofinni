@@ -137,7 +137,7 @@ export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
         <button
           onClick={() => { playClick(); handleAdd(); }}
           aria-label="Añadir movimiento"
-          className="w-16 h-16 rounded-full bg-success text-black flex items-center justify-center shadow-[0_4px_24px_rgba(74,222,128,0.5)] hover:shadow-[0_4px_36px_rgba(74,222,128,0.7)] hover:scale-110 active:scale-95 transition-all duration-200"
+          className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center animate-neon-pulse hover:scale-110 active:scale-95 transition-transform duration-200"
         >
           <Plus size={30} strokeWidth={2.5} />
         </button>

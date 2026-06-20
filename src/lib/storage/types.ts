@@ -36,6 +36,14 @@ export interface MesFinanciero {
   esEstimado?: boolean;
 }
 
+export interface SavingsMeta {
+  id: string;
+  nombre: string;
+  icono: string;
+  meta: number;
+  acumulado: number;
+}
+
 export interface AppState {
   schemaVersion: number;
   hasOnboarded: boolean;
@@ -47,6 +55,7 @@ export interface AppState {
   budgetOverrides: Record<string, Record<string, number>>;
   savingsGoal: number;
   savingsAcumulado: number;
+  savingsMetas: SavingsMeta[];
   cuenta: {
     banco: string;
     saldoActual: number;

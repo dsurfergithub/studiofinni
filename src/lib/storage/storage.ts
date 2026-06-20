@@ -15,6 +15,7 @@ export function getInitialState(): AppState {
     budgetOverrides: {},
     savingsGoal: 0,
     savingsAcumulado: 0,
+    savingsMetas: [],
     cuenta: {
       banco: '',
       saldoActual: 0,
@@ -40,8 +41,19 @@ function migrate(state: any): AppState {
     s.savingsAcumulado = 0;
   }
   if (s.hasOnboarded === undefined) {
-    // Users who already have data are considered onboarded
     s.hasOnboarded = (s.movimientos?.length > 0 || !!s.cuenta?.fechaSaldo);
+  }
+  if (!s.savingsMetas) {
+    s.savingsMetas = [];
+    if ((s.savingsGoal || 0) > 0) {
+      s.savingsMetas = [{
+        id: 'meta-legacy',
+        nombre: 'Meta de ahorro',
+        icono: '🎯',
+        meta: s.savingsGoal,
+        acumulado: s.savingsAcumulado || 0,
+      }];
+    }
   }
   
   // Future migrations can go here (e.g. if schemaVersion === 1, migrate to 2)
