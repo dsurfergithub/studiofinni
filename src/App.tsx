@@ -13,7 +13,7 @@ function AppContent() {
   const { state, selectedMesId, setSelectedMesId } = useStore();
   const [currentTab, setCurrentTab] = useState('dashboard');
 
-  if (state.movimientos.length === 0 && !state.cuenta.fechaSaldo) {
+  if (!state.hasOnboarded && state.movimientos.length === 0 && !state.cuenta.fechaSaldo) {
     return <Onboarding onFinish={() => setCurrentTab('dashboard')} />;
   }
 

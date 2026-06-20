@@ -94,16 +94,16 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate }: M
     <Sheet isOpen={isOpen} onClose={onClose} title={movimiento ? "Editar Movimiento" : "Nuevo Movimiento"}>
       <div className="space-y-6 pb-6 mt-4">
         {/* Tipo */}
-        <div className="flex gap-2 bg-surface-elevated p-1 rounded-xl">
+        <div className="flex gap-3">
           <button
             onClick={() => setTipo('gasto')}
-            className={`flex-1 py-2 rounded-lg text-sm font-bold capitalize transition-colors ${tipo === 'gasto' ? 'bg-danger text-bg' : 'text-muted hover:text-text'}`}
+            className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all border-2 ${tipo === 'gasto' ? 'bg-danger border-danger text-white shadow-[0_0_16px_rgba(255,84,120,0.35)]' : 'border-danger/40 text-danger bg-transparent hover:border-danger hover:bg-danger/10'}`}
           >
             Gasto
           </button>
           <button
             onClick={() => setTipo('ingreso')}
-            className={`flex-1 py-2 rounded-lg text-sm font-bold capitalize transition-colors ${tipo === 'ingreso' ? 'bg-success text-bg' : 'text-muted hover:text-text'}`}
+            className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all border-2 ${tipo === 'ingreso' ? 'bg-success border-success text-black shadow-[0_0_16px_rgba(74,222,128,0.35)]' : 'border-success/40 text-success bg-transparent hover:border-success hover:bg-success/10'}`}
           >
             Ingreso
           </button>

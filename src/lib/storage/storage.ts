@@ -6,6 +6,7 @@ const CURRENT_SCHEMA_VERSION = 1;
 export function getInitialState(): AppState {
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
+    hasOnboarded: false,
     movimientos: [],
     categorias: [],
     nominasAncla: [],
@@ -13,6 +14,7 @@ export function getInitialState(): AppState {
     budgetTemplate: {},
     budgetOverrides: {},
     savingsGoal: 0,
+    savingsAcumulado: 0,
     cuenta: {
       banco: '',
       saldoActual: 0,
@@ -33,6 +35,13 @@ function migrate(state: any): AppState {
   }
   if (s.savingsGoal === undefined) {
     s.savingsGoal = 0;
+  }
+  if (s.savingsAcumulado === undefined) {
+    s.savingsAcumulado = 0;
+  }
+  if (s.hasOnboarded === undefined) {
+    // Users who already have data are considered onboarded
+    s.hasOnboarded = (s.movimientos?.length > 0 || !!s.cuenta?.fechaSaldo);
   }
   
   // Future migrations can go here (e.g. if schemaVersion === 1, migrate to 2)

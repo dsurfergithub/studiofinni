@@ -38,6 +38,7 @@ export interface MesFinanciero {
 
 export interface AppState {
   schemaVersion: number;
+  hasOnboarded: boolean;
   movimientos: Movimiento[];
   categorias: Categoria[];
   nominasAncla: NominaAncla[];
@@ -45,6 +46,7 @@ export interface AppState {
   budgetTemplate: Record<string, number>;
   budgetOverrides: Record<string, Record<string, number>>;
   savingsGoal: number;
+  savingsAcumulado: number;
   cuenta: {
     banco: string;
     saldoActual: number;

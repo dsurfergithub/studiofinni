@@ -224,7 +224,7 @@ export function Ajustes() {
           <div className="grid gap-3">
             <Button variant="secondary" className="w-full justify-start py-6 rounded-2xl border-border bg-surface hover:bg-surface-elevated" onClick={() => fileInputRef.current?.click()}>
               <Upload className="mr-3 text-accent" size={20} />
-              Importar Excel (CaixaBank / ING)
+              Importar extracto bancario
             </Button>
 
             <Button variant="secondary" className="w-full justify-start py-6 rounded-2xl border-border bg-surface hover:bg-surface-elevated" onClick={handleDownloadBackup}>

@@ -17,7 +17,8 @@ export function Presupuesto({ selectedMesId, onChangeMes }: PresupuestoProps) {
   const [amountVal, setAmountVal] = useState('');
 
   const [savingsEditorOpen, setSavingsEditorOpen] = useState(false);
-  const [savingsVal, setSavingsVal] = useState('');
+  const [savingsGoalVal, setSavingsGoalVal] = useState('');
+  const [savingsAcumuladoVal, setSavingsAcumuladoVal] = useState('');
 
   const activeMeses = getMesesActivos();
   const cMes = activeMeses.find(m => m.id === selectedMesId) || activeMeses[0];
@@ -51,7 +52,7 @@ export function Presupuesto({ selectedMesId, onChangeMes }: PresupuestoProps) {
   const ppc = totalPresupuestado > 0 ? (totalGastos / totalPresupuestado) * 100 : 0;
   const isHealthy = ppc <= 100;
   
-  const ahorroActual = totalIngresos - totalGastos;
+  const ahorroActual = state.savingsAcumulado || 0;
   const metaAhorro = state.savingsGoal || 0;
   const ahorroPerc = metaAhorro > 0 ? (ahorroActual / metaAhorro) * 100 : (ahorroActual > 0 ? 100 : 0);
 
@@ -84,14 +85,19 @@ export function Presupuesto({ selectedMesId, onChangeMes }: PresupuestoProps) {
   };
   
   const handleSaveSavings = () => {
-    const val = parseFloat(savingsVal.replace(',', '.'));
-    if (isNaN(val) || val < 0) return;
-    updateState({ savingsGoal: val });
+    const goal = parseFloat(savingsGoalVal.replace(',', '.'));
+    const acumulado = parseFloat(savingsAcumuladoVal.replace(',', '.'));
+    if (isNaN(goal) || goal < 0) return;
+    updateState({
+      savingsGoal: goal,
+      savingsAcumulado: isNaN(acumulado) ? (state.savingsAcumulado || 0) : acumulado,
+    });
     setSavingsEditorOpen(false);
   };
 
   const handleEditSavings = () => {
-    setSavingsVal((state.savingsGoal || 0).toString());
+    setSavingsGoalVal((state.savingsGoal || 0).toString());
+    setSavingsAcumuladoVal((state.savingsAcumulado || 0).toString());
     setSavingsEditorOpen(true);
   };
 
@@ -136,8 +142,8 @@ export function Presupuesto({ selectedMesId, onChangeMes }: PresupuestoProps) {
             </div>
           ) : (
             <div className="text-center py-4 relative z-10">
-              <p className="text-sm text-muted font-bold mb-4">No hay meta de ahorro configurada globalmente.</p>
-              <Button onClick={handleEditSavings} className="w-full text-xs font-bold uppercase tracking-wider h-12">Fijar objetivo de ahorro</Button>
+              <p className="text-sm text-muted font-bold mb-4">Aún no has definido un objetivo de ahorro.</p>
+              <Button onClick={handleEditSavings} className="w-full text-xs font-bold uppercase tracking-wider h-12">Crear objetivo de ahorro</Button>
             </div>
           )}
         </div>
@@ -237,24 +243,40 @@ export function Presupuesto({ selectedMesId, onChangeMes }: PresupuestoProps) {
         </div>
       </Sheet>
       
-      <Sheet isOpen={savingsEditorOpen} onClose={() => setSavingsEditorOpen(false)} title="Meta de Ahorro Mensual">
+      <Sheet isOpen={savingsEditorOpen} onClose={() => setSavingsEditorOpen(false)} title="Objetivo de Ahorro">
         <div className="space-y-6 pb-6 mt-4">
-          <p className="text-sm text-muted">¿Cuánto quieres ahorrar globalmente cada mes? Esto guiará tus objetivos financieros.</p>
+          <p className="text-sm text-muted">Define tu meta y registra cuánto llevas ahorrado. Esta información es independiente de tus movimientos y presupuestos.</p>
           <div className="space-y-2">
-            <label className="text-xs font-bold text-muted uppercase tracking-wider">Objetivo de Ahorro</label>
+            <label className="text-xs font-bold text-muted uppercase tracking-wider">Meta total (€)</label>
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-mono text-muted">€</span>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 inputMode="decimal"
                 step="50"
-                value={savingsVal}
-                onChange={e => setSavingsVal(e.target.value)}
+                placeholder="0"
+                value={savingsGoalVal}
+                onChange={e => setSavingsGoalVal(e.target.value)}
                 className="w-full bg-surface border border-border rounded-xl pl-12 pr-4 py-4 text-3xl font-black font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-text transition-all"
               />
             </div>
           </div>
-          <Button onClick={handleSaveSavings} disabled={savingsVal === ''} className="w-full h-14 text-lg font-bold mt-4">Guardar Meta</Button>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-muted uppercase tracking-wider">Ya ahorrado (€)</label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-mono text-muted">€</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                step="10"
+                placeholder="0"
+                value={savingsAcumuladoVal}
+                onChange={e => setSavingsAcumuladoVal(e.target.value)}
+                className="w-full bg-surface border border-border rounded-xl pl-12 pr-4 py-4 text-3xl font-black font-mono focus:outline-none focus:border-success focus:ring-1 focus:ring-success text-success transition-all"
+              />
+            </div>
+          </div>
+          <Button onClick={handleSaveSavings} disabled={savingsGoalVal === ''} className="w-full h-14 text-lg font-bold mt-4">Guardar Objetivo</Button>
         </div>
       </Sheet>
     </div>

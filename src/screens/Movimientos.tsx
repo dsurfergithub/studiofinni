@@ -4,6 +4,7 @@ import { FinMesSelector } from '../components/ui/FinMesSelector';
 import { formatCurrency, getLocalFechaIso } from '../lib/utils';
 import { Plus, Search } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { playClick } from '../lib/audio/sounds';
 import { MovimientoEditor } from '../components/ui/MovimientoEditor';
 import { Movimiento } from '../lib/storage/types';
 
@@ -133,9 +134,13 @@ export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
       </div>
 
       <div className="fixed bottom-20 right-4 z-30">
-        <Button onClick={handleAdd} size="lg" className="rounded-full w-14 h-14 p-0 shadow-[0_0_20px_rgba(183,148,255,0.4)]">
-          <Plus size={24} />
-        </Button>
+        <button
+          onClick={() => { playClick(); handleAdd(); }}
+          aria-label="Añadir movimiento"
+          className="w-16 h-16 rounded-full bg-success text-black flex items-center justify-center shadow-[0_4px_24px_rgba(74,222,128,0.5)] hover:shadow-[0_4px_36px_rgba(74,222,128,0.7)] hover:scale-110 active:scale-95 transition-all duration-200"
+        >
+          <Plus size={30} strokeWidth={2.5} />
+        </button>
       </div>
 
       <MovimientoEditor 
