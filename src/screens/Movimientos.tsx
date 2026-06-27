@@ -133,7 +133,7 @@ export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
         )}
       </div>
 
-      <div className="fixed bottom-20 right-4 z-30">
+      <div className="fixed right-4 z-30 bottom-[calc(6rem+env(safe-area-inset-bottom))]">
         <button
           onClick={() => { playClick(); handleAdd(); }}
           aria-label="Añadir movimiento"

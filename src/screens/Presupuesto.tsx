@@ -317,7 +317,7 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
                 className="w-full bg-surface border border-border rounded-xl px-4 py-4 text-sm font-bold text-text focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent appearance-none">
                 <option value="">Selecciona una categoría...</option>
                 {catsDisponiblesParaPresupuestar.map(c => (
-                  <option key={c.id} value={c.id}>{c.icono ? `${c.icono} ` : ''}{c.nombre}</option>
+                  <option key={c.id} value={c.id}>{c.nombre}</option>
                 ))}
               </select>
             </div>
