@@ -5,9 +5,20 @@ import { parseExcelData } from '../lib/excel/parser';
 import { useStore } from '../lib/storage/store';
 import { playSuccess, playError } from '../lib/audio/sounds';
 import { getDeterministaColor } from '../lib/colors';
-import { calcularNombreMes } from '../lib/finmes/finmes';
-import { MesFinanciero } from '../lib/storage/types';
+import { calcularNombreMes, generarMesesFuturos, mesesRestantesDelAnio, derivarMeses } from '../lib/finmes/finmes';
+import { MesFinanciero, Categoria } from '../lib/storage/types';
 import { v4 as uuidv4 } from 'uuid';
+
+const CATEGORIAS_SUGERIDAS: Categoria[] = [
+  { id: 'alimentacion', nombre: 'Alimentación', color: '#4ade80', icono: 'shopping-cart', tipo: 'gasto' },
+  { id: 'hogar', nombre: 'Hogar', color: '#60a5fa', icono: 'home', tipo: 'gasto' },
+  { id: 'transporte', nombre: 'Transporte', color: '#fb923c', icono: 'car', tipo: 'gasto' },
+  { id: 'restaurantes', nombre: 'Restaurantes', color: '#fbbf24', icono: 'coffee', tipo: 'gasto' },
+  { id: 'ocio', nombre: 'Ocio', color: '#e879f9', icono: 'music', tipo: 'gasto' },
+  { id: 'salud', nombre: 'Salud', color: '#ff5478', icono: 'heart', tipo: 'gasto' },
+  { id: 'compras', nombre: 'Compras', color: '#a78bfa', icono: 'tag', tipo: 'gasto' },
+  { id: 'nomina', nombre: 'Nómina', color: '#34d399', icono: 'briefcase', tipo: 'ingreso' },
+];
 
 export function Onboarding({ onFinish }: { onFinish: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -31,9 +42,13 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
       esEstimado: false,
     };
 
+    // Planifica por defecto el resto del año (meses naturales hasta diciembre).
+    const futuros = generarMesesFuturos(mesActual, mesesRestantesDelAnio(mesActual));
+
     updateState({
       hasOnboarded: true,
-      mesesPersonalizados: [mesActual],
+      categorias: CATEGORIAS_SUGERIDAS,
+      mesesPersonalizados: [...futuros, mesActual].sort((a, b) => b.inicio.localeCompare(a.inicio)),
     });
 
     playSuccess();
@@ -73,13 +88,20 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
             importe: m.importe,
             concepto: m.concepto,
             movimientoId: m.id
-          }));
+          })).sort((a,b) => a.fecha.localeCompare(b.fecha));
+
+          // Planifica el resto del año a partir del periodo más reciente detectado.
+          const derived = derivarMeses(nominasAncla);
+          const futuros = derived.length > 0
+            ? generarMesesFuturos(derived[0], mesesRestantesDelAnio(derived[0]) || 12)
+            : [];
 
           updateState({
             hasOnboarded: true,
             movimientos: parsed.movimientos.sort((a,b) => b.fecha.localeCompare(a.fecha)),
             categorias: nuevasCats,
-            nominasAncla: nominasAncla.sort((a,b) => a.fecha.localeCompare(b.fecha)),
+            nominasAncla,
+            mesesPersonalizados: futuros,
             cuenta: {
               banco: parsed.banco,
               saldoActual: parsed.saldoActual,

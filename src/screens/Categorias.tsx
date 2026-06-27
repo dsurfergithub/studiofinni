@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useStore } from '../lib/storage/store';
-import { Plus } from 'lucide-react';
+import { Plus, ChevronLeft } from 'lucide-react';
 import { CategoryEditor } from '../components/ui/CategoryEditor';
 import { Categoria } from '../lib/storage/types';
-import * as LucideIcons from 'lucide-react';
+import { getIcon } from '../lib/icons';
 
-export function Categorias() {
+export function Categorias({ onBack }: { onBack?: () => void }) {
   const { state } = useStore();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingCat, setEditingCat] = useState<Categoria | null>(null);
@@ -23,7 +23,14 @@ export function Categorias() {
   return (
     <div className="flex-1 flex flex-col pt-safe pb-24 h-screen overflow-y-auto">
       <div className="sticky top-0 bg-bg/95 backdrop-blur-md z-10 px-4 py-4 border-b border-border flex justify-between items-center">
-        <h2 className="text-xl font-bold font-mono tracking-tight text-text">Categorías</h2>
+        <div className="flex items-center gap-1">
+          {onBack && (
+            <button onClick={onBack} className="text-muted hover:text-text p-1 -ml-1 rounded-full transition-colors">
+              <ChevronLeft size={24} />
+            </button>
+          )}
+          <h2 className="text-xl font-bold font-display tracking-tight text-text">Categorías</h2>
+        </div>
         <button onClick={handleAdd} className="text-accent hover:bg-accent-soft p-2 rounded-full transition-colors flex items-center justify-center">
           <Plus size={24} />
         </button>
@@ -31,8 +38,7 @@ export function Categorias() {
 
       <div className="p-4 space-y-3">
         {state.categorias.map(c => {
-          const pascalName = (c.icono || 'tag').split('-').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
-          const Icon = (LucideIcons as any)[pascalName] || LucideIcons.Tag;
+          const Icon = getIcon(c.icono);
 
           return (
             <button

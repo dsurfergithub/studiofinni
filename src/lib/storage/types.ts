@@ -1,3 +1,5 @@
+export type Theme = 'dark' | 'light';
+
 export interface Movimiento {
   id: string;
   fecha: string; // YYYY-MM-DD local
@@ -5,10 +7,15 @@ export interface Movimiento {
   concepto: string;
   categoria: string; // Categoria ID
   subcategoria?: string;
-  fuente: 'manual' | 'import:caixabank';
+  fuente: 'manual' | 'import:caixabank' | 'suscripcion';
   hash: string;
   tags?: string[];
   notas?: string;
+  // Si es false, es un gasto puntual/aislado que NO consume el presupuesto.
+  // Por defecto true para no romper datos importados.
+  enPresupuesto?: boolean;
+  // Enlace a la suscripción que generó este movimiento (si aplica).
+  suscripcionId?: string;
 }
 
 export interface Categoria {
@@ -17,6 +24,21 @@ export interface Categoria {
   color: string;
   icono?: string;
   tipo: 'gasto' | 'ingreso' | 'ambos';
+}
+
+export interface Suscripcion {
+  id: string;
+  nombre: string;
+  importe: number; // coste por periodo (siempre positivo)
+  frecuencia: 'mensual' | 'anual';
+  diaCobro: number; // 1-28 (día del mes en que se carga)
+  categoria: string; // Categoria ID
+  icono?: string;
+  color?: string;
+  activa: boolean;
+  inicio: string; // YYYY-MM-DD desde cuándo está activa
+  // Última clave de periodo en la que ya se generó el cargo: 'YYYY-MM' (mensual) o 'YYYY' (anual)
+  ultimoCargo?: string;
 }
 
 export interface NominaAncla {
@@ -47,11 +69,15 @@ export interface SavingsMeta {
 export interface AppState {
   schemaVersion: number;
   hasOnboarded: boolean;
+  theme: Theme;
   movimientos: Movimiento[];
   categorias: Categoria[];
+  suscripciones: Suscripcion[];
   nominasAncla: NominaAncla[];
   mesesPersonalizados: MesFinanciero[];
+  // Presupuesto base por categoría (se aplica a todos los meses salvo override).
   budgetTemplate: Record<string, number>;
+  // Presupuesto específico por mes: { [mesId]: { [catId]: importe } }
   budgetOverrides: Record<string, Record<string, number>>;
   savingsGoal: number;
   savingsAcumulado: number;
@@ -64,5 +90,6 @@ export interface AppState {
   meta: {
     creadoEn: number;
     ultimaModificacion: number;
+    ultimoAutoBackup?: number; // timestamp del último backup automático
   };
 }

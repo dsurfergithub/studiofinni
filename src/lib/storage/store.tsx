@@ -1,18 +1,36 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { AppState, Movimiento, Categoria, MesFinanciero, NominaAncla } from './types';
-import { loadState, saveState, getInitialState } from './storage';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { AppState, Movimiento, Categoria, MesFinanciero, Suscripcion, Theme } from './types';
+import { loadState, saveState, getInitialState, maybeWeeklyBackup } from './storage';
 import { derivarMeses } from '../finmes/finmes';
+import { generarCargosSuscripciones } from '../suscripciones/suscripciones';
+import { getLocalFechaIso } from '../utils';
 
 interface StoreContextType {
   state: AppState;
   updateState: (newState: Partial<AppState>) => void;
   resetState: () => void;
+  importState: (newState: AppState) => void;
   addMovimiento: (mov: Movimiento) => void;
   updateMovimiento: (id: string, mov: Partial<Movimiento>) => void;
   deleteMovimientos: (ids: string[]) => void;
   addCategoria: (cat: Categoria) => void;
   updateCategoria: (id: string, cat: Partial<Categoria>) => void;
   deleteCategoria: (id: string) => void;
+  // Suscripciones
+  addSuscripcion: (s: Suscripcion) => void;
+  updateSuscripcion: (id: string, s: Partial<Suscripcion>) => void;
+  deleteSuscripcion: (id: string) => void;
+  // Presupuesto independiente del catálogo de categorías
+  isBudgeted: (catId: string) => boolean;
+  getPresupuestoCat: (catId: string, mesId: string) => number;
+  setBudgetTemplate: (catId: string, amount: number) => void;
+  setBudgetForMonth: (catId: string, mesId: string, amount: number) => void;
+  removeFromBudget: (catId: string) => void;
+  // Tema
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+  toggleTheme: () => void;
+  // Meses
   getMesesActivos: () => MesFinanciero[];
   getSaldoCalculado: () => number;
   selectedMesId: string;
@@ -26,58 +44,69 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [initDone, setInitDone] = useState(false);
   const [selectedMesId, setSelectedMesId] = useState('');
 
-  const getMesesActivos = () => {
+  const getMesesActivos = useCallback(() => {
     const derived = derivarMeses(state.nominasAncla);
     const custom = state.mesesPersonalizados || [];
-    
-    // Merge both
     const all = [...custom, ...derived];
-    
-    // Deduplicate by ID
     const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
-    
-    // Sort oldest to newest or newest to oldest? Derived sorts newest first
     return unique.sort((a, b) => b.inicio.localeCompare(a.inicio));
-  };
+  }, [state.nominasAncla, state.mesesPersonalizados]);
 
+  // Carga inicial: estado + cargos de suscripciones + backup semanal.
   useEffect(() => {
-    setState(loadState());
+    const loaded = loadState();
+    const hoy = getLocalFechaIso();
+
+    const { nuevosMovimientos, suscripcionesActualizadas, generados } =
+      generarCargosSuscripciones(loaded.suscripciones || [], hoy);
+
+    let next = loaded;
+    if (generados > 0) {
+      const existentesHashes = new Set(loaded.movimientos.map(m => m.hash));
+      const movsAInsertar = nuevosMovimientos.filter(m => !existentesHashes.has(m.hash));
+      next = {
+        ...loaded,
+        suscripciones: suscripcionesActualizadas,
+        movimientos: [...movsAInsertar, ...loaded.movimientos]
+          .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id)),
+      };
+    }
+
+    const backupTs = maybeWeeklyBackup(next);
+    if (backupTs) {
+      next = { ...next, meta: { ...next.meta, ultimoAutoBackup: backupTs } };
+    }
+
+    setState(next);
     setInitDone(true);
   }, []);
 
-  // Whenever state changes, persist it
+  // Persistencia.
   useEffect(() => {
-    if (initDone) {
-      saveState(state);
-    }
+    if (initDone) saveState(state);
   }, [state, initDone]);
+
+  // Aplica el tema al documento.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove('light', 'dark');
+    root.classList.add(state.theme === 'light' ? 'light' : 'dark');
+  }, [state.theme]);
 
   const getDefaultSelectedMonthId = (mesesList: MesFinanciero[]) => {
     if (mesesList.length === 0) return '';
-    
-    // 1. If there's a month that contains today's date, use that!
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalFechaIso();
     const todayMes = mesesList.find(m => today >= m.inicio && today <= m.fin);
     if (todayMes) return todayMes.id;
-
-    // 2. Otherwise, find the newest month that actually has movements in the database.
-    const mesesWithMovs = mesesList.filter(mes => 
+    const mesesWithMovs = mesesList.filter(mes =>
       state.movimientos.some(m => m.fecha >= mes.inicio && m.fecha <= mes.fin)
     );
-    if (mesesWithMovs.length > 0) {
-      // Return the newest of the ones with movements (since mesesList is sorted newest first)
-      return mesesWithMovs[0].id;
-    }
-
-    // 3. Otherwise, return the first one that is not in the future (i.e. start date <= today)
+    if (mesesWithMovs.length > 0) return mesesWithMovs[0].id;
     const currentOrPast = mesesList.find(m => m.inicio <= today);
     if (currentOrPast) return currentOrPast.id;
-
-    // 4. Default to first in list (newest)
     return mesesList[0].id;
   };
 
-  // Fallback / Auto-select the smartest month if selectedMesId is empty
   const activeMeses = getMesesActivos();
   useEffect(() => {
     if (initDone && !selectedMesId && activeMeses.length > 0) {
@@ -89,9 +118,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, ...newState }));
   };
 
-  const resetState = () => {
-    setState(getInitialState());
-  };
+  const resetState = () => setState(getInitialState());
+
+  const importState = (newState: AppState) => setState(newState);
+
+  const setTheme = (t: Theme) => setState((prev) => ({ ...prev, theme: t }));
+  const toggleTheme = () =>
+    setState((prev) => ({ ...prev, theme: prev.theme === 'light' ? 'dark' : 'light' }));
 
   const addMovimiento = (mov: Movimiento) => {
     setState((prev) => ({
@@ -126,7 +159,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteCategoria = (id: string) => {
-    // Re-assign category to "sin-clasificar"
     setState((prev) => {
       const newOverrides = { ...prev.budgetOverrides };
       Object.keys(newOverrides).forEach(monthId => {
@@ -146,22 +178,95 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  // ---------- Suscripciones ----------
+  const addSuscripcion = (s: Suscripcion) => {
+    setState((prev) => {
+      const conNueva = [...prev.suscripciones, s];
+      const { nuevosMovimientos, suscripcionesActualizadas } =
+        generarCargosSuscripciones(conNueva, getLocalFechaIso());
+      const hashes = new Set(prev.movimientos.map(m => m.hash));
+      const movsNuevos = nuevosMovimientos.filter(m => !hashes.has(m.hash));
+      return {
+        ...prev,
+        suscripciones: suscripcionesActualizadas,
+        movimientos: [...movsNuevos, ...prev.movimientos]
+          .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id)),
+      };
+    });
+  };
+
+  const updateSuscripcion = (id: string, updates: Partial<Suscripcion>) => {
+    setState((prev) => ({
+      ...prev,
+      suscripciones: prev.suscripciones.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+    }));
+  };
+
+  const deleteSuscripcion = (id: string) => {
+    setState((prev) => ({
+      ...prev,
+      suscripciones: prev.suscripciones.filter((s) => s.id !== id),
+    }));
+  };
+
+  // ---------- Presupuesto independiente ----------
+  const isBudgeted = (catId: string) =>
+    Object.prototype.hasOwnProperty.call(state.budgetTemplate || {}, catId);
+
+  const getPresupuestoCat = (catId: string, mesId: string) => {
+    const override = state.budgetOverrides?.[mesId]?.[catId];
+    if (override !== undefined) return override;
+    const template = state.budgetTemplate?.[catId];
+    return template !== undefined ? template : 0;
+  };
+
+  const setBudgetTemplate = (catId: string, amount: number) => {
+    setState((prev) => ({
+      ...prev,
+      budgetTemplate: { ...prev.budgetTemplate, [catId]: amount },
+    }));
+  };
+
+  const setBudgetForMonth = (catId: string, mesId: string, amount: number) => {
+    setState((prev) => {
+      const monthOverrides = prev.budgetOverrides?.[mesId] || {};
+      return {
+        ...prev,
+        budgetOverrides: {
+          ...(prev.budgetOverrides || {}),
+          [mesId]: { ...monthOverrides, [catId]: amount },
+        },
+      };
+    });
+  };
+
+  const removeFromBudget = (catId: string) => {
+    setState((prev) => {
+      const newOverrides = { ...prev.budgetOverrides };
+      Object.keys(newOverrides).forEach(monthId => {
+        newOverrides[monthId] = Object.fromEntries(
+          Object.entries(newOverrides[monthId] || {}).filter(([k]) => k !== catId)
+        );
+      });
+      return {
+        ...prev,
+        budgetTemplate: Object.fromEntries(Object.entries(prev.budgetTemplate).filter(([k]) => k !== catId)),
+        budgetOverrides: newOverrides,
+      };
+    });
+  };
+
   const getSaldoCalculado = () => {
     if (!state.cuenta.fechaSaldo && state.movimientos.length === 0) return 0;
-    
-    // Si no hay saldo base importado, el saldo es la suma de todo.
     if (!state.cuenta.fechaSaldo) {
       return state.movimientos.reduce((acc, current) => acc + current.importe, 0);
     }
-    
-    // Suma los movimientos posteriores a fechaSaldo.
-    // Usamos lexicographical comparison since dates are YYYY-MM-DD
     const recientes = state.movimientos.filter(m => m.fecha > state.cuenta.fechaSaldo);
     const delta = recientes.reduce((sum, m) => sum + m.importe, 0);
     return state.cuenta.saldoActual + delta;
   };
 
-  if (!initDone) return null; // or a loader
+  if (!initDone) return null;
 
   return (
     <StoreContext.Provider
@@ -169,12 +274,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         state,
         updateState,
         resetState,
+        importState,
         addMovimiento,
         updateMovimiento,
         deleteMovimientos,
         addCategoria,
         updateCategoria,
         deleteCategoria,
+        addSuscripcion,
+        updateSuscripcion,
+        deleteSuscripcion,
+        isBudgeted,
+        getPresupuestoCat,
+        setBudgetTemplate,
+        setBudgetForMonth,
+        removeFromBudget,
+        theme: state.theme,
+        setTheme,
+        toggleTheme,
         getMesesActivos,
         getSaldoCalculado,
         selectedMesId,

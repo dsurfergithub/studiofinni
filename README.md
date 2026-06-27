@@ -1,20 +1,42 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Finni · v2
 
-# Run and deploy your AI Studio app
+App de **finanzas personales** (PWA instalable en iOS/Android). Funciona 100% en el cliente: tus datos se guardan en `localStorage` y nunca salen del dispositivo.
 
-This contains everything you need to run your app locally.
+## Novedades de la v2
 
-View your app in AI Studio: https://ai.studio/apps/914ffa13-302a-413e-9636-163befa9385c
+- 🔁 **Suscripciones** con vista anualizada y auto-cargo cada periodo.
+- 🌗 **Modo claro y oscuro** (oscuro por defecto, con toggle en Ajustes).
+- 🗓️ **Planificación del resto del año** por defecto desde el onboarding.
+- 🎯 **Presupuesto independiente** del catálogo de categorías: las añades cuando quieres, con barra de % y de lo que te queda por gastar.
+- 🧾 Al añadir un gasto puedes marcarlo como **puntual** (no cuenta para el presupuesto) o **en presupuesto**.
+- 📊 **Insights** con donut interactivo (toca una categoría para ver su detalle) y barras de gasto mensual del año.
+- 💾 **Auto-backup semanal** + restaurar desde JSON.
 
-## Run Locally
+## Stack
 
-**Prerequisites:**  Node.js
+React 19 · Vite 6 · TypeScript · TailwindCSS v4 · Recharts · Lucide.
 
+## Desarrollo local
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+**Requisitos:** Node.js 18+
+
+```bash
+npm install
+npm run dev      # http://localhost:3000
+```
+
+Otros scripts:
+
+```bash
+npm run build    # genera dist/
+npm run preview  # sirve el build de producción
+npm run lint     # type-check con tsc
+```
+
+## Desplegar en Vercel
+
+El repo ya incluye `vercel.json` (framework Vite, salida `dist`, rewrites SPA).
+
+1. En Vercel: **New Project → Import** este repositorio.
+2. Framework Preset: **Vite** (autodetectado). Build: `vite build`. Output: `dist`.
+3. **Deploy**. No se necesitan variables de entorno: la app es estática y todo se procesa en el navegador.

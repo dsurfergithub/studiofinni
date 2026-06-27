@@ -51,6 +51,33 @@ export function calcularNombreMes(inicio: string, fin: string): { nombre: string
   return { nombre: `${monthName} ${yStr}`, clave: bestKey };
 }
 
+/**
+ * Genera `cantidad` periodos mensuales consecutivos a partir del final de `baseMes`.
+ * Se usa para planificar meses futuros (resto del año).
+ */
+export function generarMesesFuturos(baseMes: MesFinanciero, cantidad: number): MesFinanciero[] {
+  const generados: MesFinanciero[] = [];
+  let currentFin = baseMes.fin;
+
+  for (let i = 0; i < cantidad; i++) {
+    const [y, mIndex, d] = currentFin.split('-').map(Number);
+    const startDate = new Date(y, mIndex - 1, d + 1);
+    const startStr = dateToString(startDate);
+    const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate() - 1);
+    const endStr = dateToString(endDate);
+    const { nombre, clave } = calcularNombreMes(startStr, endStr);
+    generados.push({ id: `mes-${clave}`, nombre, clave, inicio: startStr, fin: endStr, esEstimado: true });
+    currentFin = endStr;
+  }
+  return generados;
+}
+
+/** Nº de meses naturales que quedan hasta diciembre desde el mes de `baseMes`. */
+export function mesesRestantesDelAnio(baseMes: MesFinanciero): number {
+  const [, mStr] = baseMes.clave.split('-');
+  return Math.max(0, 12 - parseInt(mStr, 10));
+}
+
 export function derivarMeses(nominas: NominaAncla[]): MesFinanciero[] {
   if (!nominas || nominas.length === 0) {
     // Return current month if no data

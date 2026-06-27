@@ -1,85 +1,122 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap');
+/* Las fuentes (Inter, JetBrains Mono, Space Grotesk) se cargan vía <link> en index.html. */
 
+/* Tokens de diseño expuestos a Tailwind v4.
+   Cada color apunta a una variable semántica que cambia según el tema. */
 @theme {
   --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --color-bg: var(--c-bg);
+  --color-surface: var(--c-surface);
+  --color-surface-elevated: var(--c-surface-elevated);
+  --color-border: var(--c-border);
+  --color-text: var(--c-text);
+  --color-muted: var(--c-muted);
+  --color-dim: var(--c-dim);
+  --color-accent: var(--c-accent);
+  --color-accent-strong: var(--c-accent-strong);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-success: var(--c-success);
+  --color-success-soft: var(--c-success-soft);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
+  --color-warning: var(--c-warning);
 }
 
 @layer base {
-  :root {
-    --bg: #0a0a0f;
-    --surface: #14141c;
-    --surface-elevated: #1c1c28;
-    --border: #252535;
-    --text: #f5f5fa;
-    --muted: #7a7a92;
-    --dim: #4a4a5e;
-    --accent: #b794ff;
-    --accent-strong: #a070ff;
-    --accent-glow: rgba(183,148,255,0.25);
-    --accent-soft: rgba(183,148,255,0.08);
-    --success: #4ade80;
-    --success-soft: rgba(74,222,128,0.1);
-    --danger: #ff5478;
-    --danger-soft: rgba(255,84,120,0.1);
-    --warning: #fbbf24;
+  /* Tema oscuro (por defecto) */
+  :root,
+  .dark {
+    --c-bg: #0a0a0f;
+    --c-surface: #14141c;
+    --c-surface-elevated: #1c1c28;
+    --c-border: #252535;
+    --c-text: #f5f5fa;
+    --c-muted: #8a8aa2;
+    --c-dim: #4a4a5e;
+    --c-accent: #b794ff;
+    --c-accent-strong: #a070ff;
+    --c-accent-soft: rgba(183, 148, 255, 0.12);
+    --c-success: #4ade80;
+    --c-success-soft: rgba(74, 222, 128, 0.12);
+    --c-danger: #ff5478;
+    --c-danger-soft: rgba(255, 84, 120, 0.12);
+    --c-warning: #fbbf24;
+
+    --accent-glow: rgba(183, 148, 255, 0.28);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
     --safe-top: env(safe-area-inset-top);
     --safe-bottom: env(safe-area-inset-bottom);
+    color-scheme: dark;
+  }
+
+  /* Tema claro */
+  .light {
+    --c-bg: #f4f5fa;
+    --c-surface: #ffffff;
+    --c-surface-elevated: #eceef6;
+    --c-border: #e1e4ef;
+    --c-text: #14141c;
+    --c-muted: #6b6f82;
+    --c-dim: #a6aabb;
+    --c-accent: #7c4dff;
+    --c-accent-strong: #6a35ff;
+    --c-accent-soft: rgba(124, 77, 255, 0.1);
+    --c-success: #16a34a;
+    --c-success-soft: rgba(22, 163, 74, 0.12);
+    --c-danger: #e11d48;
+    --c-danger-soft: rgba(225, 29, 72, 0.12);
+    --c-warning: #d97706;
+
+    --accent-glow: rgba(124, 77, 255, 0.22);
+    --shadow-card: 0 1px 3px rgba(20, 20, 40, 0.08);
+    color-scheme: light;
   }
 
   body {
-    background-color: var(--bg);
-    color: var(--text);
+    background-color: var(--color-bg);
+    color: var(--color-text);
     font-family: var(--font-body);
     overscroll-behavior-y: none;
     -webkit-font-smoothing: antialiased;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 }
 
 @keyframes neon-pulse {
   0%, 100% {
-    box-shadow: 0 0 8px #fff, 0 0 18px rgba(255,255,255,0.7), 0 0 36px rgba(255,255,255,0.3);
-    opacity: 1;
+    box-shadow: 0 0 0 0 var(--accent-glow), 0 8px 24px rgba(0, 0, 0, 0.25);
   }
   50% {
-    box-shadow: 0 0 18px #fff, 0 0 40px rgba(255,255,255,0.9), 0 0 70px rgba(255,255,255,0.4);
-    opacity: 0.82;
+    box-shadow: 0 0 0 8px transparent, 0 8px 28px var(--accent-glow);
   }
+}
+
+@keyframes pop-in {
+  0% { transform: scale(0.96); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 @layer utilities {
-  .text-display {
-    font-family: var(--font-display);
-  }
-  .text-shadow-glow {
-    text-shadow: 0 0 10px var(--accent-glow);
-  }
-  .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  .pt-safe {
-    padding-top: env(safe-area-inset-top);
-  }
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
-  }
+  .text-display { font-family: var(--font-display); }
+  .text-shadow-glow { text-shadow: 0 0 12px var(--accent-glow); }
+  .shadow-card { box-shadow: var(--shadow-card); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .custom-scrollbar::-webkit-scrollbar { width: 4px; }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: var(--border);
+    background: var(--color-border);
     border-radius: 4px;
   }
-  .scroll-area {
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-  .animate-neon-pulse {
-    animation: neon-pulse 1.8s ease-in-out infinite;
-  }
+  .scroll-area { overflow-y: auto; overflow-x: hidden; }
+  .animate-neon-pulse { animation: neon-pulse 2.4s ease-in-out infinite; }
+  .animate-pop-in { animation: pop-in 0.18s ease-out; }
 }
-
 
 input, textarea, select {
-  font-size: 16px; /* Para evitar el zoom en iOS */
+  font-size: 16px; /* Evita el zoom en iOS */
 }
-
