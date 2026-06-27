@@ -4,6 +4,7 @@ import { Button } from './Button';
 import { Movimiento } from '../../lib/storage/types';
 import { useStore } from '../../lib/storage/store';
 import { getLocalFechaIso } from '../../lib/utils';
+import { fechaDentroDeMes } from '../../lib/finmes/finmes';
 import { v4 as uuidv4 } from 'uuid';
 import { ArrowDownLeft, ArrowUpRight, Check, PieChart, Sparkle } from 'lucide-react';
 import { playIngreso, playGasto, playDelete, playClick } from '../../lib/audio/sounds';
@@ -17,7 +18,8 @@ interface MovimientoEditorProps {
 }
 
 export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, defaultTipo }: MovimientoEditorProps) {
-  const { state, addMovimiento, updateMovimiento, deleteMovimientos } = useStore();
+  const { state, addMovimiento, updateMovimiento, deleteMovimientos, getMesesActivos } = useStore();
+  const meses = getMesesActivos();
 
   const [tipo, setTipo] = useState<'gasto' | 'ingreso'>('gasto');
   const [importe, setImporte] = useState('');
@@ -50,6 +52,17 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
   const seleccionarTipo = (t: 'gasto' | 'ingreso') => {
     setTipo(t);
     t === 'gasto' ? playGasto() : playIngreso();
+  };
+
+  // Mes financiero al que pertenece la fecha actual (la pertenencia se deriva de la fecha).
+  const mesActualId = meses.find(m => fecha >= m.inicio && fecha <= m.fin)?.id || '';
+
+  const handleMesChange = (mesId: string) => {
+    const mes = meses.find(m => m.id === mesId);
+    if (!mes) return;
+    // Reasignar a otro mes = mover la fecha dentro del rango de ese mes.
+    setFecha(fechaDentroDeMes(mes, fecha));
+    playClick();
   };
 
   const handleSave = () => {
@@ -196,6 +209,26 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
                 <span className="text-[11px] text-muted leading-tight">No afecta a tu presupuesto</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Mes financiero: permite reasignar el movimiento a otro periodo de forma explícita */}
+        {meses.length > 0 && (
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-muted uppercase tracking-wider">Mes financiero</label>
+            <select
+              value={mesActualId}
+              onChange={e => handleMesChange(e.target.value)}
+              className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none appearance-none capitalize"
+            >
+              {mesActualId === '' && <option value="">Fuera de los meses activos</option>}
+              {meses.map(m => (
+                <option key={m.id} value={m.id}>{m.nombre.toLowerCase()}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted leading-tight">
+              El mes se determina por la fecha. Cámbialo aquí para mover el movimiento a otro periodo.
+            </p>
           </div>
         )}
 
