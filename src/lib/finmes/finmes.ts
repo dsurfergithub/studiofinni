@@ -23,6 +23,31 @@ function addDays(d: Date, days: number): Date {
   return newD;
 }
 
+function esFechaValida(s: string): boolean {
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+}
+
+/**
+ * Devuelve una fecha (YYYY-MM-DD) que cae dentro del rango del mes financiero dado,
+ * intentando conservar el día del mes de `fecha`. Se usa al reasignar manualmente un
+ * movimiento a otro mes financiero: como la pertenencia a un mes se deriva de la fecha,
+ * mover un movimiento a otro mes implica ajustar su fecha al rango de ese mes.
+ */
+export function fechaDentroDeMes(mes: MesFinanciero, fecha: string): string {
+  if (fecha >= mes.inicio && fecha <= mes.fin) return fecha;
+  const dd = fecha.slice(8, 10);
+  // El periodo puede solapar dos meses naturales (nómina a mitad de mes), así que
+  // probamos el día en el mes natural del inicio y en el del fin antes de caer al inicio.
+  // Validamos que el candidato sea una fecha real (p. ej. evitar 31 de un mes de 30 días).
+  const candidatos = [`${mes.inicio.slice(0, 7)}-${dd}`, `${mes.fin.slice(0, 7)}-${dd}`];
+  for (const c of candidatos) {
+    if (c >= mes.inicio && c <= mes.fin && esFechaValida(c)) return c;
+  }
+  return mes.inicio;
+}
+
 export function calcularNombreMes(inicio: string, fin: string): { nombre: string, clave: string } {
   const startD = new Date(...stringToNum(inicio) as [number, number, number]);
   const endD = new Date(...stringToNum(fin) as [number, number, number]);

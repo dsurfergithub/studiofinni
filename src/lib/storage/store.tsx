@@ -96,6 +96,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const getDefaultSelectedMonthId = (mesesList: MesFinanciero[]) => {
     if (mesesList.length === 0) return '';
     const today = getLocalFechaIso();
+    // Preferimos el periodo cuyo mes natural (clave YYYY-MM) coincide con el mes natural
+    // actual. Con nóminas a final de mes, el periodo que contiene "hoy" puede etiquetarse
+    // con el mes siguiente (p. ej. 25-jul→23-ago = "Agosto"), lo que hacía que al abrir en
+    // julio se mostrase agosto. Anclar por mes natural evita ese salto.
+    const claveActual = today.slice(0, 7);
+    const mesPorClave = mesesList.find(m => m.clave === claveActual);
+    if (mesPorClave) return mesPorClave.id;
     const todayMes = mesesList.find(m => today >= m.inicio && today <= m.fin);
     if (todayMes) return todayMes.id;
     const mesesWithMovs = mesesList.filter(mes =>
