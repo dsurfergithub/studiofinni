@@ -4,7 +4,6 @@ import { Button } from './Button';
 import { Movimiento } from '../../lib/storage/types';
 import { useStore } from '../../lib/storage/store';
 import { getLocalFechaIso } from '../../lib/utils';
-import { fechaDentroDeMes } from '../../lib/finmes/finmes';
 import { v4 as uuidv4 } from 'uuid';
 import { ArrowDownLeft, ArrowUpRight, Check, PieChart, Sparkle } from 'lucide-react';
 import { playIngreso, playGasto, playDelete, playClick } from '../../lib/audio/sounds';
@@ -28,6 +27,8 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
   const [categoria, setCategoria] = useState('');
   const [notas, setNotas] = useState('');
   const [enPresupuesto, setEnPresupuesto] = useState(true);
+  // Pin de mes: '' = automático (según la fecha). Un id = el movimiento cuenta en ese mes.
+  const [mesId, setMesId] = useState('');
 
   useEffect(() => {
     if (movimiento) {
@@ -38,6 +39,8 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
       setCategoria(movimiento.categoria);
       setNotas(movimiento.notas || '');
       setEnPresupuesto(movimiento.enPresupuesto !== false);
+      // Solo es un pin si apunta a un mes existente; si no, queda en automático.
+      setMesId(movimiento.mesId && meses.some(m => m.id === movimiento.mesId) ? movimiento.mesId : '');
     } else {
       setTipo(defaultTipo || 'gasto');
       setImporte('');
@@ -46,6 +49,7 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
       setCategoria('');
       setNotas('');
       setEnPresupuesto(true);
+      setMesId('');
     }
   }, [movimiento, isOpen, defaultDate, defaultTipo]);
 
@@ -54,14 +58,16 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
     t === 'gasto' ? playGasto() : playIngreso();
   };
 
-  // Mes financiero al que pertenece la fecha actual (la pertenencia se deriva de la fecha).
-  const mesActualId = meses.find(m => fecha >= m.inicio && fecha <= m.fin)?.id || '';
+  // Mes mostrado en el selector: el pin si lo hay, si no el derivado de la fecha.
+  const mesDerivadoId = meses.find(m => fecha >= m.inicio && fecha <= m.fin)?.id || '';
+  const mesSeleccionadoId = mesId || mesDerivadoId;
+  // ¿El mes elegido es distinto del que tocaría por fecha? Entonces hay un traspaso activo.
+  const hayTraspaso = !!mesId && mesId !== mesDerivadoId;
 
-  const handleMesChange = (mesId: string) => {
-    const mes = meses.find(m => m.id === mesId);
-    if (!mes) return;
-    // Reasignar a otro mes = mover la fecha dentro del rango de ese mes.
-    setFecha(fechaDentroDeMes(mes, fecha));
+  const handleMesChange = (nuevoMesId: string) => {
+    // Reasignar = fijar el pin de mes. La fecha real NO se toca (es un traspaso, no una copia).
+    // Si el mes elegido coincide con el que tocaría por fecha, se vuelve a automático (sin pin).
+    setMesId(nuevoMesId === mesDerivadoId ? '' : nuevoMesId);
     playClick();
   };
 
@@ -81,6 +87,9 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
     // Los ingresos no consumen presupuesto; el flag solo aplica a gastos.
     const cuentaPresupuesto = tipo === 'gasto' ? enPresupuesto : true;
 
+    // Pin de mes: solo se guarda si difiere del mes que tocaría por fecha; si no, undefined.
+    const pin = mesId && mesId !== mesDerivadoId ? mesId : undefined;
+
     if (movimiento) {
       updateMovimiento(movimiento.id, {
         importe: finalImporte,
@@ -89,6 +98,7 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
         categoria: resolvedCat,
         notas,
         enPresupuesto: cuentaPresupuesto,
+        mesId: pin,
       });
     } else {
       addMovimiento({
@@ -101,6 +111,7 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
         hash: uuidv4(),
         notas,
         enPresupuesto: cuentaPresupuesto,
+        mesId: pin,
       });
     }
     finalImporte > 0 ? playIngreso() : playGasto();
@@ -217,18 +228,24 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
           <div className="space-y-2">
             <label className="text-xs font-bold text-muted uppercase tracking-wider">Mes financiero</label>
             <select
-              value={mesActualId}
+              value={mesSeleccionadoId}
               onChange={e => handleMesChange(e.target.value)}
-              className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none appearance-none capitalize"
+              className={`w-full bg-surface border rounded-xl px-4 py-3 text-sm text-text focus:ring-1 outline-none appearance-none capitalize ${hayTraspaso ? 'border-accent ring-1 ring-accent' : 'border-border focus:border-accent focus:ring-accent'}`}
             >
-              {mesActualId === '' && <option value="">Fuera de los meses activos</option>}
+              {mesSeleccionadoId === '' && <option value="">Fuera de los meses activos</option>}
               {meses.map(m => (
                 <option key={m.id} value={m.id}>{m.nombre.toLowerCase()}</option>
               ))}
             </select>
-            <p className="text-[11px] text-muted leading-tight">
-              El mes se determina por la fecha. Cámbialo aquí para mover el movimiento a otro periodo.
-            </p>
+            {hayTraspaso ? (
+              <p className="text-[11px] text-accent leading-tight font-medium">
+                Traspasado a este mes. La fecha real ({fecha}) no cambia y el importe cuenta solo aquí, no en su mes original.
+              </p>
+            ) : (
+              <p className="text-[11px] text-muted leading-tight">
+                Por defecto cuenta en el mes de su fecha. Cámbialo para traspasarlo a otro mes sin mover la fecha (p. ej. la nómina de junio cuenta en julio).
+              </p>
+            )}
           </div>
         )}
 

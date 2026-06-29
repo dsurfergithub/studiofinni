@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../lib/storage/store';
 import { FinMesSelector } from '../components/ui/FinMesSelector';
 import { formatCurrency } from '../lib/utils';
+import { movimientoEnMes } from '../lib/finmes/finmes';
 import { Sheet } from '../components/ui/Sheet';
 import { Button } from '../components/ui/Button';
 import { SavingsMeta } from '../lib/storage/types';
@@ -49,7 +50,7 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
   let gastoPuntual = 0;
   if (cMes) {
     state.movimientos.forEach(m => {
-      if (m.importe < 0 && m.fecha >= cMes.inicio && m.fecha <= cMes.fin) {
+      if (m.importe < 0 && movimientoEnMes(m, cMes, activeMeses)) {
         if (m.enPresupuesto === false) {
           gastoPuntual += Math.abs(m.importe);
         } else {
