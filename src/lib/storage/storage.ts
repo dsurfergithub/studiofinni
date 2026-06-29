@@ -1,10 +1,23 @@
-import { AppState } from './types';
+import { AppState, PlanAnual } from './types';
 
 const STORAGE_KEY = 'finni_v2';
 const BACKUP_KEY = 'finni_backups';
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_BACKUPS = 4;
+
+// Grupos por defecto del plan anual. El usuario puede renombrarlos, añadir o quitar.
+export function defaultPlanGrupos() {
+  return [
+    { id: 'fijos', nombre: 'Fijos', color: '#ef4444' },
+    { id: 'variables', nombre: 'Variables', color: '#f59e0b' },
+    { id: 'inversion', nombre: 'Inversión', color: '#22c55e' },
+  ];
+}
+
+export function defaultPlanAnual(): PlanAnual {
+  return { grupos: defaultPlanGrupos(), datos: {} };
+}
 
 export function getInitialState(): AppState {
   return {
@@ -21,6 +34,7 @@ export function getInitialState(): AppState {
     savingsGoal: 0,
     savingsAcumulado: 0,
     savingsMetas: [],
+    planAnual: defaultPlanAnual(),
     cuenta: {
       banco: '',
       saldoActual: 0,
@@ -73,9 +87,17 @@ export function migrate(state: any): AppState {
     s.schemaVersion = 2;
   }
 
+  // --- Migración a schema v3: plan anual ---
+  if (s.schemaVersion < 3) {
+    if (!s.planAnual || typeof s.planAnual !== 'object') s.planAnual = defaultPlanAnual();
+    s.schemaVersion = 3;
+  }
+
   // Defensa adicional por si vienen campos sueltos.
   if (!Array.isArray(s.suscripciones)) s.suscripciones = [];
   if (s.theme !== 'light' && s.theme !== 'dark') s.theme = 'dark';
+  if (!s.planAnual || !Array.isArray(s.planAnual.grupos)) s.planAnual = defaultPlanAnual();
+  if (!s.planAnual.datos || typeof s.planAnual.datos !== 'object') s.planAnual.datos = {};
 
   return s as AppState;
 }

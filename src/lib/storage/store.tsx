@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { AppState, Movimiento, Categoria, MesFinanciero, Suscripcion, Theme } from './types';
+import { AppState, Movimiento, Categoria, MesFinanciero, Suscripcion, Theme, PlanFila } from './types';
 import { loadState, saveState, getInitialState, maybeWeeklyBackup } from './storage';
 import { derivarMeses } from '../finmes/finmes';
 import { generarCargosSuscripciones } from '../suscripciones/suscripciones';
@@ -26,12 +26,22 @@ interface StoreContextType {
   setBudgetTemplate: (catId: string, amount: number) => void;
   setBudgetForMonth: (catId: string, mesId: string, amount: number) => void;
   removeFromBudget: (catId: string) => void;
+  // Plan anual (planificación manual)
+  getPlanFilas: (year: string) => PlanFila[];
+  setPlanCell: (year: string, monthIdx: number, key: string, value: number) => void;
+  copiarFilaPlan: (year: string, fromIdx: number) => void;
+  addPlanGrupo: (nombre: string, color: string) => void;
+  renamePlanGrupo: (id: string, nombre: string, color?: string) => void;
+  removePlanGrupo: (id: string) => void;
   // Tema
   theme: Theme;
   setTheme: (t: Theme) => void;
   toggleTheme: () => void;
   // Meses
   getMesesActivos: () => MesFinanciero[];
+  getMesesDerivados: () => MesFinanciero[];
+  setMesPersonalizado: (mes: MesFinanciero) => void;
+  removeMesPersonalizado: (id: string) => void;
   getSaldoCalculado: () => number;
   selectedMesId: string;
   setSelectedMesId: (id: string) => void;
@@ -47,10 +57,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const getMesesActivos = useCallback(() => {
     const derived = derivarMeses(state.nominasAncla);
     const custom = state.mesesPersonalizados || [];
-    const all = [...custom, ...derived];
+    // Un mes personalizado con el mismo id que uno derivado lo sobreescribe (gana el custom),
+    // de modo que el usuario puede ajustar fechas/nombre de un periodo derivado de una nómina.
+    const all = [...derived, ...custom];
     const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
     return unique.sort((a, b) => b.inicio.localeCompare(a.inicio));
   }, [state.nominasAncla, state.mesesPersonalizados]);
+
+  const getMesesDerivados = useCallback(
+    () => derivarMeses(state.nominasAncla),
+    [state.nominasAncla]
+  );
 
   // Carga inicial: estado + cargos de suscripciones + backup semanal.
   useEffect(() => {
@@ -263,6 +280,100 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  // ---------- Plan anual (planificación manual) ----------
+  const emptyFila = (): PlanFila => ({ sueldo: 0, grupos: {} });
+
+  const getPlanFilas = (year: string): PlanFila[] => {
+    const existentes = state.planAnual?.datos?.[year];
+    const filas: PlanFila[] = [];
+    for (let i = 0; i < 12; i++) {
+      const f = existentes?.[i];
+      filas.push(f ? { sueldo: f.sueldo || 0, grupos: { ...(f.grupos || {}) } } : emptyFila());
+    }
+    return filas;
+  };
+
+  const setPlanCell = (year: string, monthIdx: number, key: string, value: number) => {
+    setState((prev) => {
+      const plan = prev.planAnual || { grupos: [], datos: {} };
+      const filas = (plan.datos[year] ? [...plan.datos[year]] : []);
+      for (let i = 0; i < 12; i++) {
+        if (!filas[i]) filas[i] = emptyFila();
+        else filas[i] = { sueldo: filas[i].sueldo || 0, grupos: { ...(filas[i].grupos || {}) } };
+      }
+      if (key === 'sueldo') {
+        filas[monthIdx] = { ...filas[monthIdx], sueldo: value };
+      } else {
+        filas[monthIdx] = { ...filas[monthIdx], grupos: { ...filas[monthIdx].grupos, [key]: value } };
+      }
+      return { ...prev, planAnual: { ...plan, datos: { ...plan.datos, [year]: filas } } };
+    });
+  };
+
+  const copiarFilaPlan = (year: string, fromIdx: number) => {
+    setState((prev) => {
+      const plan = prev.planAnual || { grupos: [], datos: {} };
+      const filasPrev = plan.datos[year] || [];
+      const base = filasPrev[fromIdx] || emptyFila();
+      const filas: PlanFila[] = [];
+      for (let i = 0; i < 12; i++) {
+        filas.push({ sueldo: base.sueldo || 0, grupos: { ...(base.grupos || {}) } });
+      }
+      return { ...prev, planAnual: { ...plan, datos: { ...plan.datos, [year]: filas } } };
+    });
+  };
+
+  const addPlanGrupo = (nombre: string, color: string) => {
+    setState((prev) => {
+      const plan = prev.planAnual || { grupos: [], datos: {} };
+      const id = `grp-${Date.now().toString(36)}`;
+      return { ...prev, planAnual: { ...plan, grupos: [...plan.grupos, { id, nombre, color }] } };
+    });
+  };
+
+  const renamePlanGrupo = (id: string, nombre: string, color?: string) => {
+    setState((prev) => {
+      const plan = prev.planAnual || { grupos: [], datos: {} };
+      return {
+        ...prev,
+        planAnual: {
+          ...plan,
+          grupos: plan.grupos.map((g) => (g.id === id ? { ...g, nombre, color: color ?? g.color } : g)),
+        },
+      };
+    });
+  };
+
+  const removePlanGrupo = (id: string) => {
+    setState((prev) => {
+      const plan = prev.planAnual || { grupos: [], datos: {} };
+      const datos: Record<string, PlanFila[]> = {};
+      for (const [year, filas] of Object.entries(plan.datos) as [string, PlanFila[]][]) {
+        datos[year] = filas.map((f) => {
+          const grupos = { ...(f.grupos || {}) };
+          delete grupos[id];
+          return { ...f, grupos };
+        });
+      }
+      return { ...prev, planAnual: { ...plan, grupos: plan.grupos.filter((g) => g.id !== id), datos } };
+    });
+  };
+
+  // ---------- Meses personalizados (override de fechas/nombre) ----------
+  const setMesPersonalizado = (mes: MesFinanciero) => {
+    setState((prev) => {
+      const otros = (prev.mesesPersonalizados || []).filter((m) => m.id !== mes.id);
+      return { ...prev, mesesPersonalizados: [...otros, mes] };
+    });
+  };
+
+  const removeMesPersonalizado = (id: string) => {
+    setState((prev) => ({
+      ...prev,
+      mesesPersonalizados: (prev.mesesPersonalizados || []).filter((m) => m.id !== id),
+    }));
+  };
+
   const getSaldoCalculado = () => {
     if (!state.cuenta.fechaSaldo && state.movimientos.length === 0) return 0;
     if (!state.cuenta.fechaSaldo) {
@@ -296,10 +407,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setBudgetTemplate,
         setBudgetForMonth,
         removeFromBudget,
+        getPlanFilas,
+        setPlanCell,
+        copiarFilaPlan,
+        addPlanGrupo,
+        renamePlanGrupo,
+        removePlanGrupo,
         theme: state.theme,
         setTheme,
         toggleTheme,
         getMesesActivos,
+        getMesesDerivados,
+        setMesPersonalizado,
+        removeMesPersonalizado,
         getSaldoCalculado,
         selectedMesId,
         setSelectedMesId,
