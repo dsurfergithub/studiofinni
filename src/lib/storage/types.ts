@@ -66,6 +66,25 @@ export interface SavingsMeta {
   acumulado: number;
 }
 
+// ---- Plan anual (planificación manual tipo hoja de cálculo) ----
+export interface PlanGrupo {
+  id: string;
+  nombre: string;
+  color: string;
+}
+
+export interface PlanFila {
+  sueldo: number;
+  // importe planificado por grupo: { [grupoId]: number }
+  grupos: Record<string, number>;
+}
+
+export interface PlanAnual {
+  grupos: PlanGrupo[];
+  // Por año natural -> 12 filas (índice 0 = enero, 11 = diciembre).
+  datos: Record<string, PlanFila[]>;
+}
+
 export interface AppState {
   schemaVersion: number;
   hasOnboarded: boolean;
@@ -82,6 +101,8 @@ export interface AppState {
   savingsGoal: number;
   savingsAcumulado: number;
   savingsMetas: SavingsMeta[];
+  // Plan anual manual: grupos configurables + cifras por mes y año.
+  planAnual: PlanAnual;
   cuenta: {
     banco: string;
     saldoActual: number;

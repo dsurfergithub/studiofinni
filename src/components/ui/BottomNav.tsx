@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, List, Wallet, BarChart2, Settings } from 'lucide-react';
+import { Home, List, Wallet, Table2, BarChart2, Settings } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { playClick } from '../../lib/audio/sounds';
 
@@ -12,6 +12,7 @@ const TABS = [
   { id: 'dashboard', icon: Home, label: 'Inicio' },
   { id: 'movimientos', icon: List, label: 'Movs' },
   { id: 'presupuesto', icon: Wallet, label: 'Presup.' },
+  { id: 'plan', icon: Table2, label: 'Plan' },
   { id: 'insights', icon: BarChart2, label: 'Insights' },
   { id: 'ajustes', icon: Settings, label: 'Ajustes' },
 ];
@@ -36,7 +37,7 @@ export function BottomNav({ current, onChange }: BottomNavProps) {
             >
               <span
                 className={cn(
-                  'flex items-center justify-center rounded-full px-4 py-1 transition-all duration-200',
+                  'flex items-center justify-center rounded-full px-3 py-1 transition-all duration-200',
                   active ? 'bg-accent/15 text-accent' : 'text-muted'
                 )}
               >

@@ -5,6 +5,7 @@ import { Onboarding } from './screens/Onboarding';
 import { Dashboard } from './screens/Dashboard';
 import { Movimientos } from './screens/Movimientos';
 import { Presupuesto } from './screens/Presupuesto';
+import { PlanAnual } from './screens/PlanAnual';
 import { Categorias } from './screens/Categorias';
 import { Ajustes } from './screens/Ajustes';
 import { Suscripciones } from './screens/Suscripciones';
@@ -26,6 +27,7 @@ function AppContent() {
         {currentTab === 'dashboard' && <Dashboard selectedMesId={selectedMesId} onChangeMes={setSelectedMesId} onNavigate={setCurrentTab} />}
         {currentTab === 'movimientos' && <Movimientos selectedMesId={selectedMesId} onChangeMes={setSelectedMesId} />}
         {currentTab === 'presupuesto' && <Presupuesto selectedMesId={selectedMesId} onChangeMes={setSelectedMesId} onNavigate={setCurrentTab} />}
+        {currentTab === 'plan' && <PlanAnual onNavigate={setCurrentTab} />}
         {currentTab === 'insights' && (
           <Suspense fallback={<div className="flex items-center justify-center h-full text-muted text-sm">Cargando insights…</div>}>
             <Insights selectedMesId={selectedMesId} onChangeMes={setSelectedMesId} />
