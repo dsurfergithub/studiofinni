@@ -4,6 +4,7 @@ import { FinMesSelector } from '../components/ui/FinMesSelector';
 import { formatCurrency, getLocalFechaIso } from '../lib/utils';
 import { MovimientoEditor } from '../components/ui/MovimientoEditor';
 import { totalMensual } from '../lib/suscripciones/suscripciones';
+import { movimientoEnMes } from '../lib/finmes/finmes';
 import { ArrowDownLeft, ArrowUpRight, Repeat, ChevronRight } from 'lucide-react';
 
 interface DashboardProps {
@@ -28,7 +29,7 @@ export function Dashboard({ selectedMesId, onChangeMes, onNavigate }: DashboardP
   const gastosPorCategoria: Record<string, number> = {};
 
   if (currentMes) {
-    const movsMes = state.movimientos.filter(m => m.fecha >= currentMes.inicio && m.fecha <= currentMes.fin);
+    const movsMes = state.movimientos.filter(m => movimientoEnMes(m, currentMes, meses));
     movsMes.forEach(m => {
       if (m.importe > 0) ingresos += m.importe;
       else {

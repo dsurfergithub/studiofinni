@@ -3,6 +3,7 @@ import { useStore } from '../lib/storage/store';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { formatCurrency } from '../lib/utils';
 import { FinMesSelector } from '../components/ui/FinMesSelector';
+import { movimientoEnMes } from '../lib/finmes/finmes';
 import { ChevronLeft } from 'lucide-react';
 
 interface InsightsProps {
@@ -22,8 +23,8 @@ export function Insights({ selectedMesId, onChangeMes }: InsightsProps) {
 
   const movsMes = useMemo(() => {
     if (!cMes) return [];
-    return state.movimientos.filter(m => m.fecha >= cMes.inicio && m.fecha <= cMes.fin);
-  }, [state.movimientos, cMes]);
+    return state.movimientos.filter(m => movimientoEnMes(m, cMes, activeMeses));
+  }, [state.movimientos, cMes, activeMeses]);
 
   // Cashflow
   const { ingresos, gastos } = useMemo(() => {

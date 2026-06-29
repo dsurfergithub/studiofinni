@@ -6,6 +6,7 @@ import { Plus, Search } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { playClick } from '../lib/audio/sounds';
 import { MovimientoEditor } from '../components/ui/MovimientoEditor';
+import { movimientoEnMes } from '../lib/finmes/finmes';
 import { Movimiento } from '../lib/storage/types';
 
 interface MovimientosProps {
@@ -43,9 +44,7 @@ export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
   };
 
   const filtered = state.movimientos.filter(m => {
-    if (cMes) {
-      if (m.fecha < cMes.inicio || m.fecha > cMes.fin) return false;
-    }
+    if (cMes && !movimientoEnMes(m, cMes, activeMeses)) return false;
     if (catFilter && m.categoria !== catFilter) {
       return false;
     }
@@ -60,7 +59,7 @@ export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
 
   const activeCategoriasInMonth = Array.from(new Set(
     state.movimientos
-      .filter(m => !cMes || (m.fecha >= cMes.inicio && m.fecha <= cMes.fin))
+      .filter(m => !cMes || movimientoEnMes(m, cMes, activeMeses))
       .map(m => m.categoria)
   )).map(catId => state.categorias.find(c => c.id === catId)).filter(Boolean) as any[];
 
@@ -121,6 +120,11 @@ export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
                       <span>{m.fecha}</span>
                       <span className="w-1 h-1 rounded-full bg-border" />
                       <span className="truncate">{cat?.nombre || 'Sin clasificar'}</span>
+                      {m.mesId && activeMeses.some(x => x.id === m.mesId) && (
+                        <span className="flex-shrink-0 text-[10px] font-bold text-accent bg-accent/10 rounded px-1.5 py-0.5">
+                          ↦ traspasado
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

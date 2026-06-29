@@ -16,6 +16,10 @@ export interface Movimiento {
   enPresupuesto?: boolean;
   // Enlace a la suscripción que generó este movimiento (si aplica).
   suscripcionId?: string;
+  // Mes financiero al que se asigna explícitamente (pin). Si está y apunta a un mes
+  // existente, el movimiento cuenta SOLO en ese mes (traspaso), sin tocar su fecha real.
+  // Si no está, la pertenencia se deriva de la fecha como hasta ahora.
+  mesId?: string;
 }
 
 export interface Categoria {

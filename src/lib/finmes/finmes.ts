@@ -1,4 +1,4 @@
-import { NominaAncla, MesFinanciero } from '../storage/types';
+import { NominaAncla, MesFinanciero, Movimiento } from '../storage/types';
 
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -46,6 +46,23 @@ export function fechaDentroDeMes(mes: MesFinanciero, fecha: string): string {
     if (c >= mes.inicio && c <= mes.fin && esFechaValida(c)) return c;
   }
   return mes.inicio;
+}
+
+/**
+ * Devuelve el id del mes financiero al que pertenece un movimiento.
+ * - Si tiene un pin (`mesId`) que apunta a un mes existente, ese es su mes (traspaso explícito).
+ * - Si no, se deriva de la fecha (primer mes cuyo rango la contiene).
+ * Garantiza una atribución única: un movimiento nunca cuenta en dos meses a la vez.
+ */
+export function mesIdDeMovimiento(mov: Movimiento, meses: MesFinanciero[]): string | undefined {
+  if (mov.mesId && meses.some(m => m.id === mov.mesId)) return mov.mesId;
+  return meses.find(m => mov.fecha >= m.inicio && mov.fecha <= m.fin)?.id;
+}
+
+/** ¿Pertenece el movimiento al mes dado? Respeta el pin explícito y evita duplicados. */
+export function movimientoEnMes(mov: Movimiento, mes: MesFinanciero, meses: MesFinanciero[]): boolean {
+  if (mov.mesId && meses.some(m => m.id === mov.mesId)) return mov.mesId === mes.id;
+  return mov.fecha >= mes.inicio && mov.fecha <= mes.fin;
 }
 
 export function calcularNombreMes(inicio: string, fin: string): { nombre: string, clave: string } {
