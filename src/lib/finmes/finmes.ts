@@ -128,8 +128,11 @@ export function derivarMeses(nominas: NominaAncla[]): MesFinanciero[] {
     const start = new Date(y, m, 1);
     const end = new Date(y, m + 1, 0); // last day
     const nm = calcularNombreMes(dateToString(start), dateToString(end));
+    // Mismo formato de id que los meses del onboarding (`mes-YYYY-MM`): si el usuario
+    // empezó desde cero, el mes personalizado sobreescribe este fallback en vez de
+    // aparecer duplicado en el selector.
     return [{
-      id: nm.clave,
+      id: `mes-${nm.clave}`,
       nombre: nm.nombre,
       clave: nm.clave,
       inicio: dateToString(start),
