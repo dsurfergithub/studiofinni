@@ -54,9 +54,10 @@ export function Dashboard({ selectedMesId, onChangeMes, onNavigate }: DashboardP
     setEditorOpen(true);
   };
 
-  const defaultDate = currentMes && getLocalFechaIso() >= currentMes.inicio && getLocalFechaIso() <= currentMes.fin
-    ? getLocalFechaIso()
-    : currentMes?.fin || getLocalFechaIso();
+  // La fecha por defecto de un movimiento nuevo es siempre hoy: el selector de mes
+  // financiero del editor ya indica a qué periodo cae y permite cambiarlo. (Antes se
+  // forzaba al rango del mes seleccionado y salían fechas futuras como fin de periodo.)
+  const defaultDate = getLocalFechaIso();
 
   const formatCurrencyBig = (amount: number) => {
     const formatted = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);

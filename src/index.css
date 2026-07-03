@@ -99,6 +99,11 @@
   100% { transform: scale(1); opacity: 1; }
 }
 
+@keyframes toast-in {
+  0% { transform: translateY(-12px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
 @layer utilities {
   .text-display { font-family: var(--font-display); }
   .text-shadow-glow { text-shadow: 0 0 12px var(--accent-glow); }
@@ -115,6 +120,7 @@
   .scroll-area { overflow-y: auto; overflow-x: hidden; }
   .animate-neon-pulse { animation: neon-pulse 2.4s ease-in-out infinite; }
   .animate-pop-in { animation: pop-in 0.18s ease-out; }
+  .animate-toast-in { animation: toast-in 0.22s ease-out; }
 }
 
 input, textarea, select {

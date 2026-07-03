@@ -4,6 +4,6 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/((?!assets/|icon.png|manifest.webmanifest).*)", "destination": "/index.html" }
+    { "source": "/((?!assets/|icon.png|manifest.webmanifest|sw.js|registerSW.js|workbox-).*)", "destination": "/index.html" }
   ]
 }

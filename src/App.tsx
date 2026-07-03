@@ -1,6 +1,9 @@
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { StoreProvider, useStore } from './lib/storage/store';
+import { ToastProvider } from './components/ui/Toast';
 import { BottomNav } from './components/ui/BottomNav';
+import { Novedades } from './components/ui/Novedades';
+import { hayNovedadesSinVer, marcarVersionVista } from './lib/changelog';
 import { Onboarding } from './screens/Onboarding';
 import { Dashboard } from './screens/Dashboard';
 import { Movimientos } from './screens/Movimientos';
@@ -16,8 +19,26 @@ const Insights = lazy(() => import('./screens/Insights').then(m => ({ default: m
 function AppContent() {
   const { state, selectedMesId, setSelectedMesId } = useStore();
   const [currentTab, setCurrentTab] = useState('dashboard');
+  const [novedadesOpen, setNovedadesOpen] = useState(false);
 
-  if (!state.hasOnboarded && state.movimientos.length === 0 && !state.cuenta.fechaSaldo) {
+  const esUsuarioNuevo = !state.hasOnboarded && state.movimientos.length === 0 && !state.cuenta.fechaSaldo;
+
+  // Aviso de novedades: solo para quien ya usaba la app y acaba de recibir una versión nueva.
+  useEffect(() => {
+    if (esUsuarioNuevo) {
+      // Un usuario recién llegado no necesita ver "qué ha cambiado".
+      marcarVersionVista();
+    } else if (hayNovedadesSinVer()) {
+      setNovedadesOpen(true);
+    }
+  }, [esUsuarioNuevo]);
+
+  const cerrarNovedades = () => {
+    marcarVersionVista();
+    setNovedadesOpen(false);
+  };
+
+  if (esUsuarioNuevo) {
     return <Onboarding onFinish={() => setCurrentTab('dashboard')} />;
   }
 
@@ -38,14 +59,18 @@ function AppContent() {
         {currentTab === 'ajustes' && <Ajustes onNavigate={setCurrentTab} />}
       </main>
       <BottomNav current={currentTab} onChange={setCurrentTab} />
+
+      <Novedades isOpen={novedadesOpen} onClose={cerrarNovedades} soloUltima />
     </div>
   );
 }
 
 export default function App() {
   return (
-    <StoreProvider>
-      <AppContent />
-    </StoreProvider>
+    <ToastProvider>
+      <StoreProvider>
+        <AppContent />
+      </StoreProvider>
+    </ToastProvider>
   );
 }

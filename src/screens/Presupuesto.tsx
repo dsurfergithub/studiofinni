@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { useStore } from '../lib/storage/store';
 import { FinMesSelector } from '../components/ui/FinMesSelector';
-import { formatCurrency } from '../lib/utils';
+import { useToast } from '../components/ui/Toast';
+import { formatCurrency, getLocalFechaIso } from '../lib/utils';
 import { movimientoEnMes } from '../lib/finmes/finmes';
 import { Sheet } from '../components/ui/Sheet';
 import { Button } from '../components/ui/Button';
 import { SavingsMeta } from '../lib/storage/types';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Tag, Sparkle } from 'lucide-react';
+import { Plus, Tag, Sparkle, PiggyBank } from 'lucide-react';
 
 interface PresupuestoProps {
   selectedMesId: string;
@@ -25,9 +26,10 @@ function barColor(perc: number) {
 
 export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: PresupuestoProps) {
   const {
-    state, getMesesActivos, updateState,
+    state, getMesesActivos, updateState, addMovimiento, addCategoria,
     isBudgeted, getPresupuestoCat, setBudgetTemplate, setBudgetForMonth, removeFromBudget,
   } = useStore();
+  const { toast } = useToast();
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
@@ -41,6 +43,7 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
   const [metaIcono, setMetaIcono] = useState('🎯');
   const [metaTotal, setMetaTotal] = useState('');
   const [metaAcumulado, setMetaAcumulado] = useState('');
+  const [aporteVal, setAporteVal] = useState('');
 
   const activeMeses = getMesesActivos();
   const cMes = activeMeses.find(m => m.id === selectedMesId) || activeMeses[0];
@@ -122,11 +125,13 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
   // ---- Savings handlers ----
   const handleNewMeta = () => {
     setEditingMetaId(null); setMetaNombre(''); setMetaIcono('🎯'); setMetaTotal(''); setMetaAcumulado('');
+    setAporteVal('');
     setMetaEditorOpen(true);
   };
   const handleEditMeta = (meta: SavingsMeta) => {
     setEditingMetaId(meta.id); setMetaNombre(meta.nombre); setMetaIcono(meta.icono);
     setMetaTotal(meta.meta.toString()); setMetaAcumulado(meta.acumulado.toString());
+    setAporteVal('');
     setMetaEditorOpen(true);
   };
   const handleSaveMeta = () => {
@@ -151,6 +156,37 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
     if (!editingMetaId || !window.confirm('¿Eliminar esta meta de ahorro?')) return;
     updateState({ savingsMetas: (state.savingsMetas || []).filter(m => m.id !== editingMetaId) });
     setMetaEditorOpen(false);
+  };
+
+  // Aporta dinero a la meta: suma al acumulado y lo registra como movimiento para que
+  // el saldo y el historial reflejen el traspaso al ahorro (fuera del presupuesto).
+  const handleAportar = () => {
+    if (!editingMetaId) return;
+    const val = parseFloat(aporteVal.replace(',', '.'));
+    if (isNaN(val) || val <= 0) {
+      toast('Escribe cuánto quieres aportar.', 'error');
+      return;
+    }
+    if (!state.categorias.some(c => c.id === 'ahorro')) {
+      addCategoria({ id: 'ahorro', nombre: 'Ahorro', color: '#22d3ee', icono: 'star', tipo: 'gasto', macro: 'inversion' });
+    }
+    addMovimiento({
+      id: uuidv4(),
+      fecha: getLocalFechaIso(),
+      importe: -val,
+      concepto: `Aportación a ${metaNombre || 'meta de ahorro'}`,
+      categoria: 'ahorro',
+      fuente: 'manual',
+      hash: uuidv4(),
+      enPresupuesto: false,
+    });
+    updateState({
+      savingsMetas: (state.savingsMetas || []).map(m =>
+        m.id === editingMetaId ? { ...m, acumulado: m.acumulado + val } : m),
+    });
+    setAporteVal('');
+    setMetaEditorOpen(false);
+    toast(`${formatCurrency(val)} aportados a "${metaNombre}". Registrado en tus movimientos.`, 'ok');
   };
 
   const catsDisponiblesParaPresupuestar = state.categorias.filter(c => c.tipo !== 'ingreso' && !budgetedIds.has(c.id));
@@ -396,6 +432,24 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
                 className="w-full bg-surface border border-border rounded-xl pl-12 pr-4 py-4 text-3xl font-black font-mono focus:outline-none focus:border-success focus:ring-1 focus:ring-success text-success" />
             </div>
           </div>
+          {/* Aportación rápida: solo para metas ya creadas */}
+          {editingMetaId && (
+            <div className="space-y-2 bg-surface-elevated rounded-2xl p-4 border border-accent/25">
+              <label className="text-xs font-bold text-accent uppercase tracking-wider flex items-center gap-1.5">
+                <PiggyBank size={14} /> Aportar ahora
+              </label>
+              <p className="text-[11px] text-muted">Suma dinero a esta meta y quedará apuntado en tus movimientos (no cuenta para el presupuesto).</p>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg font-mono text-muted">€</span>
+                  <input type="number" inputMode="decimal" step="10" placeholder="0" value={aporteVal} onChange={e => setAporteVal(e.target.value)}
+                    className="w-full bg-surface border border-border rounded-xl pl-9 pr-3 py-3 text-xl font-bold font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-text" />
+                </div>
+                <Button onClick={handleAportar} disabled={aporteVal === ''} className="h-auto px-5 font-bold">Aportar</Button>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col gap-3 pt-2">
             <Button onClick={handleSaveMeta} disabled={!metaNombre.trim() || metaTotal === ''} className="w-full h-14 text-lg font-bold">
               {editingMetaId ? 'Guardar cambios' : 'Crear meta'}
