@@ -3,6 +3,7 @@ import { Upload, Sparkles } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { parseExcelData } from '../lib/excel/parser';
 import { useStore } from '../lib/storage/store';
+import { useToast } from '../components/ui/Toast';
 import { playSuccess, playError } from '../lib/audio/sounds';
 import { getDeterministaColor } from '../lib/colors';
 import { calcularNombreMes, generarMesesFuturos, mesesRestantesDelAnio, derivarMeses } from '../lib/finmes/finmes';
@@ -10,19 +11,21 @@ import { MesFinanciero, Categoria } from '../lib/storage/types';
 import { v4 as uuidv4 } from 'uuid';
 
 const CATEGORIAS_SUGERIDAS: Categoria[] = [
-  { id: 'alimentacion', nombre: 'Alimentación', color: '#4ade80', icono: 'shopping-cart', tipo: 'gasto' },
-  { id: 'hogar', nombre: 'Hogar', color: '#60a5fa', icono: 'home', tipo: 'gasto' },
-  { id: 'transporte', nombre: 'Transporte', color: '#fb923c', icono: 'car', tipo: 'gasto' },
-  { id: 'restaurantes', nombre: 'Restaurantes', color: '#fbbf24', icono: 'coffee', tipo: 'gasto' },
-  { id: 'ocio', nombre: 'Ocio', color: '#e879f9', icono: 'music', tipo: 'gasto' },
-  { id: 'salud', nombre: 'Salud', color: '#ff5478', icono: 'heart', tipo: 'gasto' },
-  { id: 'compras', nombre: 'Compras', color: '#a78bfa', icono: 'tag', tipo: 'gasto' },
+  { id: 'alimentacion', nombre: 'Alimentación', color: '#4ade80', icono: 'shopping-cart', tipo: 'gasto', macro: 'variable' },
+  { id: 'hogar', nombre: 'Hogar', color: '#60a5fa', icono: 'home', tipo: 'gasto', macro: 'fijo' },
+  { id: 'transporte', nombre: 'Transporte', color: '#fb923c', icono: 'car', tipo: 'gasto', macro: 'variable' },
+  { id: 'restaurantes', nombre: 'Restaurantes', color: '#fbbf24', icono: 'coffee', tipo: 'gasto', macro: 'variable' },
+  { id: 'ocio', nombre: 'Ocio', color: '#e879f9', icono: 'music', tipo: 'gasto', macro: 'variable' },
+  { id: 'salud', nombre: 'Salud', color: '#ff5478', icono: 'heart', tipo: 'gasto', macro: 'fijo' },
+  { id: 'compras', nombre: 'Compras', color: '#a78bfa', icono: 'tag', tipo: 'gasto', macro: 'variable' },
+  { id: 'inversion', nombre: 'Inversión', color: '#22c55e', icono: 'trending-up', tipo: 'gasto', macro: 'inversion' },
   { id: 'nomina', nombre: 'Nómina', color: '#34d399', icono: 'briefcase', tipo: 'ingreso' },
 ];
 
 export function Onboarding({ onFinish }: { onFinish: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { updateState, getMesesActivos } = useStore();
+  const { toast } = useToast();
 
   const handleStartFresh = () => {
     const today = new Date();
@@ -113,7 +116,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
           onFinish();
         } catch (err) {
           playError();
-          alert((err as Error).message || 'Error parseando el archivo');
+          toast((err as Error).message || 'No se pudo leer el archivo. ¿Es un extracto compatible?', 'error');
         }
       };
       reader.readAsBinaryString(file);

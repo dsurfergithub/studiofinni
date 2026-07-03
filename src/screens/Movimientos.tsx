@@ -17,6 +17,7 @@ interface MovimientosProps {
 export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
   const { state, getMesesActivos } = useStore();
   const [search, setSearch] = useState('');
+  const [buscarTodos, setBuscarTodos] = useState(false);
   const [catFilter, setCatFilter] = useState<string | null>(null);
   
   const [editorOpen, setEditorOpen] = useState(false);
@@ -25,13 +26,8 @@ export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
   const activeMeses = getMesesActivos();
   const cMes = activeMeses.find(m => m.id === selectedMesId) || activeMeses[0];
 
-  const getDefaultDate = () => {
-    const today = getLocalFechaIso();
-    if (cMes && today >= cMes.inicio && today <= cMes.fin) {
-      return today;
-    }
-    return cMes?.fin || today;
-  };
+  // Siempre hoy: el editor muestra el mes financiero al que cae y permite cambiarlo.
+  const getDefaultDate = () => getLocalFechaIso();
 
   const handleAdd = () => {
     setEditingMov(null);
@@ -43,8 +39,11 @@ export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
     setEditorOpen(true);
   };
 
+  // Con búsqueda activa se puede ampliar el ámbito a todo el historial.
+  const busquedaGlobal = search.trim() !== '' && buscarTodos;
+
   const filtered = state.movimientos.filter(m => {
-    if (cMes && !movimientoEnMes(m, cMes, activeMeses)) return false;
+    if (!busquedaGlobal && cMes && !movimientoEnMes(m, cMes, activeMeses)) return false;
     if (catFilter && m.categoria !== catFilter) {
       return false;
     }
@@ -69,7 +68,7 @@ export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
         <FinMesSelector selectedMesId={selectedMesId} onChange={onChangeMes} />
         <div className="relative mt-4">
           <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-          <input 
+          <input
             type="text"
             placeholder="Buscar movimientos..."
             value={search}
@@ -77,6 +76,23 @@ export function Movimientos({ selectedMesId, onChangeMes }: MovimientosProps) {
             className="w-full bg-surface border border-border rounded-full pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-text placeholder-muted transition-all"
           />
         </div>
+
+        {search.trim() !== '' && (
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => setBuscarTodos(false)}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${!buscarTodos ? 'bg-text text-bg' : 'bg-surface border border-border text-muted'}`}
+            >
+              Este mes
+            </button>
+            <button
+              onClick={() => setBuscarTodos(true)}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${buscarTodos ? 'bg-text text-bg' : 'bg-surface border border-border text-muted'}`}
+            >
+              Todos los meses
+            </button>
+          </div>
+        )}
         
         {activeCategoriasInMonth.length > 0 && (
           <div className="flex gap-2 overflow-x-auto mt-4 pb-2 no-scrollbar px-1">

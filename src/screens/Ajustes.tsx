@@ -1,12 +1,17 @@
 import React, { useRef, useState } from 'react';
 import { useStore } from '../lib/storage/store';
 import { Button } from '../components/ui/Button';
-import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock } from 'lucide-react';
+import { useToast } from '../components/ui/Toast';
+import { Novedades } from '../components/ui/Novedades';
+import { APP_VERSION } from '../lib/changelog';
+import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, Megaphone } from 'lucide-react';
 import { parseExcelData } from '../lib/excel/parser';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
 import { getDeterministaColor } from '../lib/colors';
+import { sugerirCategoria } from '../lib/categorias/sugerencias';
+import { movimientosACsv } from '../lib/export/csv';
 import { v4 as uuidv4 } from 'uuid';
-import { calcularNombreMes, derivarMeses, generarMesesFuturos, mesesRestantesDelAnio } from '../lib/finmes/finmes';
+import { derivarMeses, generarMesesFuturos, mesesRestantesDelAnio } from '../lib/finmes/finmes';
 import { getBackups, createManualBackup, migrate } from '../lib/storage/storage';
 
 export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) {
@@ -15,6 +20,8 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
   const { resetState, updateState, importState, state, getMesesActivos, setSelectedMesId, theme, toggleTheme } = useStore();
   const [audioEnabled, setAudioEnabled] = useState(soundsEnabled());
   const [backups, setBackups] = useState(getBackups());
+  const [novedadesOpen, setNovedadesOpen] = useState(false);
+  const { toast } = useToast();
 
   const handleToggleAudio = () => {
     const next = !audioEnabled;
@@ -24,7 +31,7 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
 
   const handleCreateNextMonths = () => {
     const activeMeses = getMesesActivos();
-    if (activeMeses.length === 0) { alert('No hay meses activos para basarse.'); return; }
+    if (activeMeses.length === 0) { toast('Todavía no hay ningún mes del que partir.', 'error'); return; }
     const lastMes = activeMeses[0];
     const restantes = mesesRestantesDelAnio(lastMes);
     const nuevos = generarMesesFuturos(lastMes, restantes > 0 ? restantes : 12);
@@ -37,7 +44,7 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
 
     if (nuevos.length > 0) setSelectedMesId(nuevos[0].id);
     playSuccess();
-    alert(`Planificación expandida: se han generado ${nuevos.length} periodos para cubrir el resto del año.`);
+    toast(`Listo: ${nuevos.length} meses planificados hasta final de año.`, 'ok');
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -55,7 +62,15 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
           const dictIds = new Set(state.categorias.map(c => c.id));
           const finalCats = [...state.categorias, ...nuevasCats.filter(c => !dictIds.has(c.id))];
           const dictMovs = new Set(state.movimientos.map(m => m.hash));
-          const nuevosMovs = parsed.movimientos.filter(m => !dictMovs.has(m.hash));
+          const nuevosMovs = parsed.movimientos
+            .filter(m => !dictMovs.has(m.hash))
+            .map(m => {
+              // Las filas que llegan sin clasificar heredan la categoría de conceptos
+              // parecidos ya registrados (el usuario siempre puede corregirla).
+              if (m.categoria !== 'sin-clasificar') return m;
+              const sugerida = sugerirCategoria(m.concepto, state.movimientos);
+              return sugerida ? { ...m, categoria: sugerida } : m;
+            });
           const todoMovas = [...state.movimientos, ...nuevosMovs];
 
           const ingresosRecurrentes = todoMovas.filter(m => m.importe > 0);
@@ -86,10 +101,10 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
 
           if (derivedMonths.length > 0) setSelectedMesId(derivedMonths[0].id);
           playSuccess();
-          alert(`Importados ${nuevosMovs.length} movimientos nuevos y planificados los periodos del resto del año.`);
+          toast(`Importados ${nuevosMovs.length} movimientos nuevos. Meses del resto del año planificados.`, 'ok');
         } catch (err) {
           playError();
-          alert((err as Error).message || 'Error parseando Excel');
+          toast((err as Error).message || 'No se pudo leer el Excel. ¿Es un extracto compatible?', 'error');
         }
       };
       reader.readAsBinaryString(file);
@@ -111,6 +126,24 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
     a.click();
     URL.revokeObjectURL(url);
     playSuccess();
+    toast('Backup descargado. Guárdalo en un lugar seguro.', 'ok');
+  };
+
+  const handleExportCsv = () => {
+    if (state.movimientos.length === 0) {
+      toast('Aún no hay movimientos que exportar.', 'info');
+      return;
+    }
+    const csv = movimientosACsv(state.movimientos, state.categorias);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `finni_movimientos_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    playSuccess();
+    toast(`${state.movimientos.length} movimientos exportados a CSV (se abre con Excel).`, 'ok');
   };
 
   const handleRestoreFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,10 +159,10 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
         if (!window.confirm('Esto reemplazará todos tus datos actuales por los del backup. ¿Continuar?')) return;
         importState(migrate(parsed));
         playSuccess();
-        alert('Backup restaurado correctamente.');
+        toast('Backup restaurado correctamente.', 'ok');
       } catch (err) {
         playError();
-        alert((err as Error).message || 'No se pudo leer el backup.');
+        toast((err as Error).message || 'No se pudo leer el backup.', 'error');
       }
     };
     reader.readAsText(file);
@@ -195,6 +228,10 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
               <div className="flex items-center gap-3 text-sm font-bold"><Tag size={20} className="text-accent" /><span>Categorías</span></div>
               <ChevronRight size={18} className="text-muted" />
             </button>
+            <button onClick={() => setNovedadesOpen(true)} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
+              <div className="flex items-center gap-3 text-sm font-bold"><Megaphone size={20} className="text-accent" /><span>Novedades de la app</span></div>
+              <span className="text-xs font-mono text-muted flex items-center gap-2">v{APP_VERSION} <ChevronRight size={18} /></span>
+            </button>
           </div>
         </section>
 
@@ -243,6 +280,9 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
             <Button variant="secondary" className="w-full justify-start py-6 rounded-2xl border-border bg-surface hover:bg-surface-elevated" onClick={handleDownloadBackup}>
               <Download className="mr-3 text-success" size={20} /> Exportar backup (JSON)
             </Button>
+            <Button variant="secondary" className="w-full justify-start py-6 rounded-2xl border-border bg-surface hover:bg-surface-elevated" onClick={handleExportCsv}>
+              <FileSpreadsheet className="mr-3 text-success" size={20} /> Exportar movimientos (CSV / Excel)
+            </Button>
             <Button variant="secondary" className="w-full justify-start py-6 rounded-2xl border-border bg-surface hover:bg-surface-elevated" onClick={() => restoreInputRef.current?.click()}>
               <RotateCcw className="mr-3 text-accent" size={20} /> Restaurar backup (JSON)
             </Button>
@@ -253,7 +293,17 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
             </Button>
           </div>
         </section>
+
+        {/* Créditos */}
+        <footer className="text-center space-y-1 pb-2">
+          <p className="text-xs text-muted">
+            Hecho con <span className="text-danger">♥</span> por <span className="font-bold text-accent">@dsurfer</span>
+          </p>
+          <p className="text-[10px] font-mono text-dim">Finni v{APP_VERSION} · tus datos nunca salen de tu dispositivo</p>
+        </footer>
       </div>
+
+      <Novedades isOpen={novedadesOpen} onClose={() => setNovedadesOpen(false)} />
     </div>
   );
 }

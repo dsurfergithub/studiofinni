@@ -4,7 +4,7 @@ import { formatCurrency, getLocalFechaIso } from '../lib/utils';
 import { Sheet } from '../components/ui/Sheet';
 import { Button } from '../components/ui/Button';
 import { Suscripcion } from '../lib/storage/types';
-import { costeMensual, costeAnual, totalMensual, totalAnual } from '../lib/suscripciones/suscripciones';
+import { costeMensual, costeAnual, totalMensual, totalAnual, totalIngresosMensual } from '../lib/suscripciones/suscripciones';
 import { v4 as uuidv4 } from 'uuid';
 import { Repeat, CalendarClock, TrendingUp } from 'lucide-react';
 
@@ -27,14 +27,17 @@ export function Suscripciones(_props: Props) {
   const [categoria, setCategoria] = useState('');
   const [icono, setIcono] = useState('📺');
   const [activa, setActiva] = useState(true);
+  const [esIngreso, setEsIngreso] = useState(false);
 
   const mensualTotal = totalMensual(subs);
   const anualTotal = totalAnual(subs);
+  const ingresosMensual = totalIngresosMensual(subs);
 
   const openNew = () => {
     setEditingId(null);
     setNombre(''); setImporte(''); setFrecuencia('mensual');
     setDiaCobro('1'); setCategoria(''); setIcono('📺'); setActiva(true);
+    setEsIngreso(false);
     setEditorOpen(true);
   };
 
@@ -47,6 +50,7 @@ export function Suscripciones(_props: Props) {
     setCategoria(s.categoria);
     setIcono(s.icono || '📺');
     setActiva(s.activa);
+    setEsIngreso(!!s.esIngreso);
     setEditorOpen(true);
   };
 
@@ -58,7 +62,7 @@ export function Suscripciones(_props: Props) {
     if (editingId) {
       updateSuscripcion(editingId, {
         nombre, importe: val, frecuencia, diaCobro: dia,
-        categoria: categoria || 'sin-clasificar', icono, activa,
+        categoria: categoria || 'sin-clasificar', icono, activa, esIngreso,
       });
     } else {
       const nueva: Suscripcion = {
@@ -71,6 +75,7 @@ export function Suscripciones(_props: Props) {
         icono,
         activa,
         inicio: getLocalFechaIso(),
+        esIngreso,
       };
       addSuscripcion(nueva);
     }
@@ -112,8 +117,9 @@ export function Suscripciones(_props: Props) {
 
         {anualTotal > 0 && (
           <p className="text-xs text-muted text-center px-4 -mt-2">
-            Tus suscripciones suponen <span className="font-bold text-text">{formatCurrency(anualTotal)}</span> al año.
-            Se cargan solas cada periodo en tus movimientos.
+            Tus pagos recurrentes suponen <span className="font-bold text-text">{formatCurrency(anualTotal)}</span> al año.
+            Se apuntan solos cada periodo en tus movimientos.
+            {ingresosMensual > 0 && <> Además cobras <span className="font-bold text-success">{formatCurrency(ingresosMensual)}</span> al mes de forma recurrente.</>}
           </p>
         )}
 
@@ -150,7 +156,9 @@ export function Suscripciones(_props: Props) {
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="font-mono font-bold text-text">{formatCurrency(s.importe)}<span className="text-muted text-xs">/{s.frecuencia === 'mensual' ? 'mes' : 'año'}</span></p>
+                      <p className={`font-mono font-bold ${s.esIngreso ? 'text-success' : 'text-text'}`}>
+                        {s.esIngreso ? '+' : ''}{formatCurrency(s.importe)}<span className="text-muted text-xs">/{s.frecuencia === 'mensual' ? 'mes' : 'año'}</span>
+                      </p>
                       <p className="text-[11px] text-muted font-mono">
                         {s.frecuencia === 'mensual' ? `${formatCurrency(costeAnual(s))}/año` : `${formatCurrency(costeMensual(s))}/mes`}
                       </p>
@@ -191,6 +199,29 @@ export function Suscripciones(_props: Props) {
                   {ic}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Gasto o ingreso recurrente */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-muted uppercase tracking-wider">¿Qué es?</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setEsIngreso(false)}
+                className={`flex flex-col items-start gap-0.5 p-3 rounded-xl text-left transition-all ${!esIngreso ? 'bg-danger/15 border-2 border-danger' : 'bg-surface-elevated border border-border'}`}
+              >
+                <span className={`text-sm font-bold ${!esIngreso ? 'text-text' : 'text-muted'}`}>Pago recurrente</span>
+                <span className="text-[11px] text-muted leading-tight">Netflix, gimnasio, alquiler…</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEsIngreso(true)}
+                className={`flex flex-col items-start gap-0.5 p-3 rounded-xl text-left transition-all ${esIngreso ? 'bg-success/15 border-2 border-success' : 'bg-surface-elevated border border-border'}`}
+              >
+                <span className={`text-sm font-bold ${esIngreso ? 'text-text' : 'text-muted'}`}>Ingreso recurrente</span>
+                <span className="text-[11px] text-muted leading-tight">Nómina, alquiler que cobras…</span>
+              </button>
             </div>
           </div>
 

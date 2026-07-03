@@ -5,6 +5,8 @@ import { derivarMeses } from '../finmes/finmes';
 import { generarCargosSuscripciones } from '../suscripciones/suscripciones';
 import { getLocalFechaIso } from '../utils';
 
+export type PlanAmbito = 'plan' | 'escenario';
+
 interface StoreContextType {
   state: AppState;
   updateState: (newState: Partial<AppState>) => void;
@@ -26,13 +28,11 @@ interface StoreContextType {
   setBudgetTemplate: (catId: string, amount: number) => void;
   setBudgetForMonth: (catId: string, mesId: string, amount: number) => void;
   removeFromBudget: (catId: string) => void;
-  // Plan anual (planificación manual)
-  getPlanFilas: (year: string) => PlanFila[];
-  setPlanCell: (year: string, monthIdx: number, key: string, value: number) => void;
-  copiarFilaPlan: (year: string, fromIdx: number) => void;
-  addPlanGrupo: (nombre: string, color: string) => void;
-  renamePlanGrupo: (id: string, nombre: string, color?: string) => void;
-  removePlanGrupo: (id: string) => void;
+  // Plan anual (planificación manual): ambito 'plan' (base) o 'escenario' (¿y si…?)
+  getPlanFilas: (year: string, ambito?: PlanAmbito) => PlanFila[];
+  setPlanCell: (year: string, monthIdx: number, key: string, value: number, ambito?: PlanAmbito) => void;
+  copiarFilaPlan: (year: string, fromIdx: number, ambito?: PlanAmbito) => void;
+  copiarPlanAEscenario: (year: string) => void;
   // Tema
   theme: Theme;
   setTheme: (t: Theme) => void;
@@ -142,9 +142,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, ...newState }));
   };
 
-  const resetState = () => setState(getInitialState());
+  // Al reemplazar los datos, el mes seleccionado puede no existir en el nuevo estado:
+  // se vacía para que el efecto de selección por defecto lo recalcule.
+  const resetState = () => {
+    setSelectedMesId('');
+    setState(getInitialState());
+  };
 
-  const importState = (newState: AppState) => setState(newState);
+  const importState = (newState: AppState) => {
+    setSelectedMesId('');
+    setState(newState);
+  };
 
   const setTheme = (t: Theme) => setState((prev) => ({ ...prev, theme: t }));
   const toggleTheme = () =>
@@ -220,10 +228,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const updateSuscripcion = (id: string, updates: Partial<Suscripcion>) => {
-    setState((prev) => ({
-      ...prev,
-      suscripciones: prev.suscripciones.map((s) => (s.id === id ? { ...s, ...updates } : s)),
-    }));
+    setState((prev) => {
+      const hoy = getLocalFechaIso();
+      const [hy, hm] = hoy.split('-').map(Number);
+      // Clave del periodo anterior al actual: al reactivar o cambiar de frecuencia no
+      // queremos rellenar cargos de los periodos en pausa, solo desde el periodo actual.
+      const periodoAnterior = (frecuencia: Suscripcion['frecuencia']) =>
+        frecuencia === 'mensual'
+          ? `${hm === 1 ? hy - 1 : hy}-${String(hm === 1 ? 12 : hm - 1).padStart(2, '0')}`
+          : String(hy - 1);
+
+      const editadas = prev.suscripciones.map((s) => {
+        if (s.id !== id) return s;
+        const next = { ...s, ...updates };
+        const reactivada = !s.activa && next.activa;
+        const cambioFrecuencia = next.frecuencia !== s.frecuencia;
+        if (reactivada || cambioFrecuencia) {
+          next.ultimoCargo = periodoAnterior(next.frecuencia);
+        }
+        return next;
+      });
+
+      // Genera al momento los cargos que la edición deja pendientes (p. ej. al reactivar).
+      const { nuevosMovimientos, suscripcionesActualizadas } = generarCargosSuscripciones(editadas, hoy);
+      const hashes = new Set(prev.movimientos.map(m => m.hash));
+      const movsNuevos = nuevosMovimientos.filter(m => !hashes.has(m.hash));
+      return {
+        ...prev,
+        suscripciones: suscripcionesActualizadas,
+        movimientos: [...movsNuevos, ...prev.movimientos]
+          .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id)),
+      };
+    });
   };
 
   const deleteSuscripcion = (id: string) => {
@@ -283,8 +319,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ---------- Plan anual (planificación manual) ----------
   const emptyFila = (): PlanFila => ({ sueldo: 0, grupos: {} });
 
-  const getPlanFilas = (year: string): PlanFila[] => {
-    const existentes = state.planAnual?.datos?.[year];
+  const getPlanFilas = (year: string, ambito: PlanAmbito = 'plan'): PlanFila[] => {
+    const fuente = ambito === 'escenario' ? state.planAnual?.escenario : state.planAnual?.datos;
+    const existentes = fuente?.[year];
     const filas: PlanFila[] = [];
     for (let i = 0; i < 12; i++) {
       const f = existentes?.[i];
@@ -293,69 +330,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return filas;
   };
 
-  const setPlanCell = (year: string, monthIdx: number, key: string, value: number) => {
+  const normalizarFilas = (filasPrev: PlanFila[] | undefined): PlanFila[] => {
+    const filas: PlanFila[] = [];
+    for (let i = 0; i < 12; i++) {
+      const f = filasPrev?.[i];
+      filas.push(f ? { sueldo: f.sueldo || 0, grupos: { ...(f.grupos || {}) } } : emptyFila());
+    }
+    return filas;
+  };
+
+  const setPlanCell = (year: string, monthIdx: number, key: string, value: number, ambito: PlanAmbito = 'plan') => {
     setState((prev) => {
-      const plan = prev.planAnual || { grupos: [], datos: {} };
-      const filas = (plan.datos[year] ? [...plan.datos[year]] : []);
-      for (let i = 0; i < 12; i++) {
-        if (!filas[i]) filas[i] = emptyFila();
-        else filas[i] = { sueldo: filas[i].sueldo || 0, grupos: { ...(filas[i].grupos || {}) } };
-      }
+      const plan = prev.planAnual || { datos: {}, escenario: {} };
+      const campo = ambito === 'escenario' ? 'escenario' : 'datos';
+      const filas = normalizarFilas(plan[campo]?.[year]);
       if (key === 'sueldo') {
         filas[monthIdx] = { ...filas[monthIdx], sueldo: value };
       } else {
         filas[monthIdx] = { ...filas[monthIdx], grupos: { ...filas[monthIdx].grupos, [key]: value } };
       }
-      return { ...prev, planAnual: { ...plan, datos: { ...plan.datos, [year]: filas } } };
+      return { ...prev, planAnual: { ...plan, [campo]: { ...plan[campo], [year]: filas } } };
     });
   };
 
-  const copiarFilaPlan = (year: string, fromIdx: number) => {
+  const copiarFilaPlan = (year: string, fromIdx: number, ambito: PlanAmbito = 'plan') => {
     setState((prev) => {
-      const plan = prev.planAnual || { grupos: [], datos: {} };
-      const filasPrev = plan.datos[year] || [];
-      const base = filasPrev[fromIdx] || emptyFila();
+      const plan = prev.planAnual || { datos: {}, escenario: {} };
+      const campo = ambito === 'escenario' ? 'escenario' : 'datos';
+      const base = plan[campo]?.[year]?.[fromIdx] || emptyFila();
       const filas: PlanFila[] = [];
       for (let i = 0; i < 12; i++) {
         filas.push({ sueldo: base.sueldo || 0, grupos: { ...(base.grupos || {}) } });
       }
-      return { ...prev, planAnual: { ...plan, datos: { ...plan.datos, [year]: filas } } };
+      return { ...prev, planAnual: { ...plan, [campo]: { ...plan[campo], [year]: filas } } };
     });
   };
 
-  const addPlanGrupo = (nombre: string, color: string) => {
+  // Arranca el escenario de un año desde el plan base para modificarlo a partir de ahí.
+  const copiarPlanAEscenario = (year: string) => {
     setState((prev) => {
-      const plan = prev.planAnual || { grupos: [], datos: {} };
-      const id = `grp-${Date.now().toString(36)}`;
-      return { ...prev, planAnual: { ...plan, grupos: [...plan.grupos, { id, nombre, color }] } };
-    });
-  };
-
-  const renamePlanGrupo = (id: string, nombre: string, color?: string) => {
-    setState((prev) => {
-      const plan = prev.planAnual || { grupos: [], datos: {} };
-      return {
-        ...prev,
-        planAnual: {
-          ...plan,
-          grupos: plan.grupos.map((g) => (g.id === id ? { ...g, nombre, color: color ?? g.color } : g)),
-        },
-      };
-    });
-  };
-
-  const removePlanGrupo = (id: string) => {
-    setState((prev) => {
-      const plan = prev.planAnual || { grupos: [], datos: {} };
-      const datos: Record<string, PlanFila[]> = {};
-      for (const [year, filas] of Object.entries(plan.datos) as [string, PlanFila[]][]) {
-        datos[year] = filas.map((f) => {
-          const grupos = { ...(f.grupos || {}) };
-          delete grupos[id];
-          return { ...f, grupos };
-        });
-      }
-      return { ...prev, planAnual: { ...plan, grupos: plan.grupos.filter((g) => g.id !== id), datos } };
+      const plan = prev.planAnual || { datos: {}, escenario: {} };
+      const filas = normalizarFilas(plan.datos?.[year]);
+      return { ...prev, planAnual: { ...plan, escenario: { ...plan.escenario, [year]: filas } } };
     });
   };
 
@@ -410,9 +426,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         getPlanFilas,
         setPlanCell,
         copiarFilaPlan,
-        addPlanGrupo,
-        renamePlanGrupo,
-        removePlanGrupo,
+        copiarPlanAEscenario,
         theme: state.theme,
         setTheme,
         toggleTheme,

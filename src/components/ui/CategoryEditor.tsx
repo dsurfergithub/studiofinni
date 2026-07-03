@@ -3,7 +3,8 @@ import { Sheet } from './Sheet';
 import { Button } from './Button';
 import { ColorPicker } from './ColorPicker';
 import { IconPicker } from './IconPicker';
-import { Categoria } from '../../lib/storage/types';
+import { Categoria, MacroTipo } from '../../lib/storage/types';
+import { MACRO_OPCIONES } from '../../lib/plan/plan';
 import { PALETA_COLORES } from '../../lib/colors';
 import { useStore } from '../../lib/storage/store';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,6 +22,7 @@ export function CategoryEditor({ isOpen, onClose, category }: CategoryEditorProp
   const [color, setColor] = useState(PALETA_COLORES[0]);
   const [icono, setIcono] = useState('tag');
   const [tipo, setTipo] = useState<'gasto' | 'ingreso' | 'ambos'>('gasto');
+  const [macro, setMacro] = useState<MacroTipo>('variable');
 
   useEffect(() => {
     if (category) {
@@ -28,11 +30,13 @@ export function CategoryEditor({ isOpen, onClose, category }: CategoryEditorProp
       setColor(category.color);
       setIcono(category.icono || 'tag');
       setTipo(category.tipo);
+      setMacro(category.macro || 'variable');
     } else {
       setNombre('');
       setColor(PALETA_COLORES[0]);
       setIcono('tag');
       setTipo('gasto');
+      setMacro('variable');
     }
   }, [category, isOpen]);
 
@@ -41,7 +45,7 @@ export function CategoryEditor({ isOpen, onClose, category }: CategoryEditorProp
 
     if (category) {
       updateCategoria(category.id, {
-        nombre, color, icono, tipo
+        nombre, color, icono, tipo, macro
       });
     } else {
       addCategoria({
@@ -49,7 +53,8 @@ export function CategoryEditor({ isOpen, onClose, category }: CategoryEditorProp
         nombre,
         color,
         icono,
-        tipo
+        tipo,
+        macro
       });
     }
     onClose();
@@ -92,6 +97,27 @@ export function CategoryEditor({ isOpen, onClose, category }: CategoryEditorProp
             ))}
           </div>
         </div>
+
+        {/* Macro-grupo (solo tiene sentido para categorías con gastos) */}
+        {tipo !== 'ingreso' && (
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-muted uppercase tracking-wider">¿Qué tipo de gasto es?</label>
+            <div className="grid gap-2">
+              {MACRO_OPCIONES.map(op => (
+                <button
+                  key={op.valor}
+                  type="button"
+                  onClick={() => setMacro(op.valor)}
+                  className={`flex flex-col items-start p-3 rounded-xl text-left transition-all ${macro === op.valor ? 'bg-accent/15 border-2 border-accent' : 'bg-surface border border-border'}`}
+                >
+                  <span className={`text-sm font-bold ${macro === op.valor ? 'text-text' : 'text-muted'}`}>{op.nombre}</span>
+                  <span className="text-[11px] text-muted leading-tight">{op.ayuda}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted px-1">Sirve para que el Plan anual agrupe tus gastos reales automáticamente.</p>
+          </div>
+        )}
 
         {/* Color */}
         <div className="space-y-2">

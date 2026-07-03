@@ -1,22 +1,14 @@
-import { AppState, PlanAnual } from './types';
+import { AppState, PlanAnual, PlanFila } from './types';
+import { PLAN_COLUMNAS } from '../plan/plan';
 
 const STORAGE_KEY = 'finni_v2';
 const BACKUP_KEY = 'finni_backups';
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_BACKUPS = 4;
 
-// Grupos por defecto del plan anual. El usuario puede renombrarlos, añadir o quitar.
-export function defaultPlanGrupos() {
-  return [
-    { id: 'fijos', nombre: 'Fijos', color: '#ef4444' },
-    { id: 'variables', nombre: 'Variables', color: '#f59e0b' },
-    { id: 'inversion', nombre: 'Inversión', color: '#22c55e' },
-  ];
-}
-
 export function defaultPlanAnual(): PlanAnual {
-  return { grupos: defaultPlanGrupos(), datos: {} };
+  return { datos: {}, escenario: {} };
 }
 
 export function getInitialState(): AppState {
@@ -93,11 +85,33 @@ export function migrate(state: any): AppState {
     s.schemaVersion = 3;
   }
 
+  // --- Migración a schema v4: macro-grupos fijos en el plan + escenario ---
+  if (s.schemaVersion < 4) {
+    if (!s.planAnual || typeof s.planAnual !== 'object') s.planAnual = defaultPlanAnual();
+    // El plan v3 tenía grupos libres; las columnas pasan a ser los 3 macro-grupos.
+    // Los importes de grupos desconocidos se suman a 'variables' para no perder datos.
+    const conocidos = new Set(PLAN_COLUMNAS.map(c => c.id));
+    const datos: Record<string, PlanFila[]> = {};
+    for (const [year, filas] of Object.entries(s.planAnual.datos || {}) as [string, any[]][]) {
+      datos[year] = (filas || []).map((f: any) => {
+        const grupos: Record<string, number> = {};
+        for (const [gid, val] of Object.entries(f?.grupos || {})) {
+          const destino = conocidos.has(gid) ? gid : 'variables';
+          grupos[destino] = (grupos[destino] || 0) + (Number(val) || 0);
+        }
+        return { sueldo: Number(f?.sueldo) || 0, grupos };
+      });
+    }
+    s.planAnual = { datos, escenario: s.planAnual.escenario || {} };
+    s.schemaVersion = 4;
+  }
+
   // Defensa adicional por si vienen campos sueltos.
   if (!Array.isArray(s.suscripciones)) s.suscripciones = [];
   if (s.theme !== 'light' && s.theme !== 'dark') s.theme = 'dark';
-  if (!s.planAnual || !Array.isArray(s.planAnual.grupos)) s.planAnual = defaultPlanAnual();
+  if (!s.planAnual || typeof s.planAnual !== 'object') s.planAnual = defaultPlanAnual();
   if (!s.planAnual.datos || typeof s.planAnual.datos !== 'object') s.planAnual.datos = {};
+  if (!s.planAnual.escenario || typeof s.planAnual.escenario !== 'object') s.planAnual.escenario = {};
 
   return s as AppState;
 }

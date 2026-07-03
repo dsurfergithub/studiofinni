@@ -11,14 +11,19 @@ export function costeAnual(s: Suscripcion): number {
   return s.frecuencia === 'anual' ? s.importe : s.importe * 12;
 }
 
-/** Suma del coste mensual de todas las suscripciones activas. */
+/** Suma del coste mensual de las suscripciones activas (solo gastos, no ingresos). */
 export function totalMensual(subs: Suscripcion[]): number {
-  return subs.filter(s => s.activa).reduce((acc, s) => acc + costeMensual(s), 0);
+  return subs.filter(s => s.activa && !s.esIngreso).reduce((acc, s) => acc + costeMensual(s), 0);
 }
 
-/** Suma del coste anual de todas las suscripciones activas. */
+/** Suma del coste anual de las suscripciones activas (solo gastos, no ingresos). */
 export function totalAnual(subs: Suscripcion[]): number {
-  return subs.filter(s => s.activa).reduce((acc, s) => acc + costeAnual(s), 0);
+  return subs.filter(s => s.activa && !s.esIngreso).reduce((acc, s) => acc + costeAnual(s), 0);
+}
+
+/** Suma de ingresos recurrentes mensuales equivalentes activos. */
+export function totalIngresosMensual(subs: Suscripcion[]): number {
+  return subs.filter(s => s.activa && s.esIngreso).reduce((acc, s) => acc + costeMensual(s), 0);
 }
 
 function ymd(y: number, m: number, d: number): string {
@@ -116,7 +121,7 @@ function crearMov(s: Suscripcion, fecha: string): Movimiento {
   return {
     id: uuidv4(),
     fecha,
-    importe: -Math.abs(s.importe),
+    importe: s.esIngreso ? Math.abs(s.importe) : -Math.abs(s.importe),
     concepto: s.nombre,
     categoria: s.categoria,
     fuente: 'suscripcion',

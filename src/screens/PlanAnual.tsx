@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
-import { useStore } from '../lib/storage/store';
+import { useStore, PlanAmbito } from '../lib/storage/store';
 import { formatCurrency } from '../lib/utils';
-import { Sheet } from '../components/ui/Sheet';
 import { Button } from '../components/ui/Button';
-import { ColorPicker } from '../components/ui/ColorPicker';
-import { ChevronLeft, ChevronRight, Plus, Percent, Euro, Copy } from 'lucide-react';
-import type { PlanGrupo } from '../lib/storage/types';
+import { useToast } from '../components/ui/Toast';
+import { PLAN_COLUMNAS, realDelAnio } from '../lib/plan/plan';
+import { PlanFila } from '../lib/storage/types';
+import { ChevronLeft, ChevronRight, Percent, Euro, Copy, ClipboardList, FlaskConical, Activity, Tag } from 'lucide-react';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const MES_CORTO = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 const SUELDO_COLOR = '#3b82f6';
 const REMANENTE_COLOR = '#8b5cf6';
+
+type Vista = PlanAmbito | 'real';
 
 interface CellInputProps {
   value: number;
@@ -39,94 +41,98 @@ function CellInput({ value, onCommit, accent }: CellInputProps) {
   );
 }
 
+/** Diferencia del real/escenario respecto al plan, con color según sea buena o mala. */
+function Delta({ valor, plan, invertir }: { valor: number; plan: number; invertir?: boolean }) {
+  const delta = valor - plan;
+  if (plan === 0 && valor === 0) return null;
+  if (Math.abs(delta) < 0.005) return <span className="block text-[9px] font-mono text-muted">= plan</span>;
+  // Para gastos (invertir=true), gastar MENOS que el plan es bueno.
+  const bueno = invertir ? delta < 0 : delta > 0;
+  return (
+    <span className={`block text-[9px] font-mono ${bueno ? 'text-success' : 'text-danger'}`}>
+      {delta > 0 ? '+' : '−'}{formatCurrency(Math.abs(delta)).replace(/\s/g, '')}
+    </span>
+  );
+}
+
 interface PlanAnualProps {
   onNavigate?: (tab: string) => void;
 }
 
 export function PlanAnual({ onNavigate }: PlanAnualProps) {
-  const { state, getPlanFilas, setPlanCell, copiarFilaPlan, addPlanGrupo, renamePlanGrupo, removePlanGrupo } = useStore();
+  const { state, getPlanFilas, setPlanCell, copiarFilaPlan, copiarPlanAEscenario } = useStore();
+  const { toast } = useToast();
 
   const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [vista, setVista] = useState<Vista>('plan');
   const [showPercent, setShowPercent] = useState(false);
   // Se incrementa para forzar el remonte de los inputs cuando cambian sus valores
   // por una acción externa (p. ej. "Copiar enero"), no por tecleo del usuario.
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Editor de grupo
-  const [grupoSheetOpen, setGrupoSheetOpen] = useState(false);
-  const [editingGrupo, setEditingGrupo] = useState<PlanGrupo | null>(null);
-  const [grupoNombre, setGrupoNombre] = useState('');
-  const [grupoColor, setGrupoColor] = useState('#f59e0b');
+  const filasPlan = getPlanFilas(year, 'plan');
+  const filasEscenario = getPlanFilas(year, 'escenario');
+  const filasReal = realDelAnio(state.movimientos, state.categorias, year);
 
-  const grupos = state.planAnual?.grupos || [];
-  const filas = getPlanFilas(year);
+  const filas: PlanFila[] = vista === 'plan' ? filasPlan : vista === 'escenario' ? filasEscenario : filasReal;
+  const esEditable = vista !== 'real';
+  // En Real y Escenario, las diferencias se comparan contra el plan base.
+  const comparaConPlan = vista !== 'plan' && filasPlan.some(f => f.sueldo > 0 || Object.values(f.grupos).some((v: number) => v > 0));
 
-  // Totales por columna
-  const totalSueldo = filas.reduce((a, f) => a + (f.sueldo || 0), 0);
-  const totalPorGrupo: Record<string, number> = {};
-  grupos.forEach((g) => {
-    totalPorGrupo[g.id] = filas.reduce((a, f) => a + (f.grupos?.[g.id] || 0), 0);
-  });
-  const remanenteFila = (idx: number) => {
-    const f = filas[idx];
-    const gastos = grupos.reduce((a, g) => a + (f.grupos?.[g.id] || 0), 0);
-    return (f.sueldo || 0) - gastos;
+  const totales = (fs: PlanFila[]) => {
+    const sueldo = fs.reduce((a, f) => a + (f.sueldo || 0), 0);
+    const porCol: Record<string, number> = {};
+    PLAN_COLUMNAS.forEach(c => { porCol[c.id] = fs.reduce((a, f) => a + (f.grupos?.[c.id] || 0), 0); });
+    const gastos = Object.values(porCol).reduce((a, v) => a + v, 0);
+    return { sueldo, porCol, gastos, remanente: sueldo - gastos };
   };
-  const totalRemanente = filas.reduce((a, _f, i) => a + remanenteFila(i), 0);
-  const tasaAhorro = totalSueldo > 0 ? (totalRemanente / totalSueldo) * 100 : 0;
+
+  const tot = totales(filas);
+  const totPlan = totales(filasPlan);
+  const tasaAhorro = tot.sueldo > 0 ? (tot.remanente / tot.sueldo) * 100 : 0;
+
+  const remanenteFila = (f: PlanFila) =>
+    (f.sueldo || 0) - PLAN_COLUMNAS.reduce((a, c) => a + (f.grupos?.[c.id] || 0), 0);
 
   const pct = (val: number, base: number) => (base > 0 ? `${Math.round((val / base) * 100)}%` : '—');
 
-  // ---- Handlers grupo ----
-  const handleNewGrupo = () => {
-    setEditingGrupo(null);
-    setGrupoNombre('');
-    setGrupoColor('#f59e0b');
-    setGrupoSheetOpen(true);
-  };
-  const handleEditGrupo = (g: PlanGrupo) => {
-    setEditingGrupo(g);
-    setGrupoNombre(g.nombre);
-    setGrupoColor(g.color);
-    setGrupoSheetOpen(true);
-  };
-  const handleSaveGrupo = () => {
-    const nombre = grupoNombre.trim();
-    if (!nombre) return;
-    if (editingGrupo) renamePlanGrupo(editingGrupo.id, nombre, grupoColor);
-    else addPlanGrupo(nombre, grupoColor);
-    setGrupoSheetOpen(false);
-  };
-  const handleDeleteGrupo = () => {
-    if (!editingGrupo) return;
-    if (window.confirm(`¿Eliminar el grupo "${editingGrupo.nombre}"? Se borran sus cifras en todos los años.`)) {
-      removePlanGrupo(editingGrupo.id);
-      setGrupoSheetOpen(false);
+  const handleCopiar = () => {
+    if (window.confirm('¿Copiar las cifras de enero a todos los meses del año? Sobrescribe el resto de meses.')) {
+      copiarFilaPlan(year, 0, vista as PlanAmbito);
+      setRefreshKey((k) => k + 1);
+      toast('Enero copiado a todos los meses del año.', 'ok');
     }
   };
 
-  const handleCopiar = () => {
-    if (window.confirm('¿Copiar las cifras de enero a todos los meses del año? Sobrescribe el resto de meses.')) {
-      copiarFilaPlan(year, 0);
-      setRefreshKey((k) => k + 1);
-    }
+  const handleEmpezarEscenarioDesdePlan = () => {
+    copiarPlanAEscenario(year);
+    setRefreshKey((k) => k + 1);
+    toast('Escenario creado a partir de tu plan. Cambia lo que quieras probar.', 'ok');
   };
+
+  const escenarioVacio = !filasEscenario.some(f => f.sueldo > 0 || Object.values(f.grupos).some((v: number) => v > 0));
 
   const thBase = 'px-2 py-2 text-[10px] uppercase font-bold tracking-wider whitespace-nowrap';
   const cellBase = 'px-2 py-1.5 text-right font-mono text-sm whitespace-nowrap';
   const stickyCol = 'sticky left-0 z-10 bg-surface';
 
+  const VISTAS: { id: Vista; nombre: string; icono: typeof ClipboardList }[] = [
+    { id: 'plan', nombre: 'Plan', icono: ClipboardList },
+    { id: 'escenario', nombre: '¿Y si…?', icono: FlaskConical },
+    { id: 'real', nombre: 'Real', icono: Activity },
+  ];
+
   return (
     <div className="flex-1 flex flex-col pt-safe pb-24 h-screen overflow-y-auto">
       {/* Cabecera: selector de año + toggle € / % */}
-      <div className="sticky top-0 bg-bg/95 backdrop-blur-md z-20 px-4 py-4 border-b border-border">
+      <div className="sticky top-0 bg-bg/95 backdrop-blur-md z-20 px-4 py-4 border-b border-border space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 bg-surface px-3 py-1.5 rounded-full border border-border">
-            <button onClick={() => setYear(String(Number(year) - 1))} className="text-muted hover:text-text p-1">
+            <button onClick={() => setYear(String(Number(year) - 1))} className="text-muted hover:text-text p-1" aria-label="Año anterior">
               <ChevronLeft size={18} />
             </button>
             <span className="text-sm font-bold tracking-widest text-text tabular-nums">{year}</span>
-            <button onClick={() => setYear(String(Number(year) + 1))} className="text-muted hover:text-text p-1">
+            <button onClick={() => setYear(String(Number(year) + 1))} className="text-muted hover:text-text p-1" aria-label="Año siguiente">
               <ChevronRight size={18} />
             </button>
           </div>
@@ -138,23 +144,46 @@ export function PlanAnual({ onNavigate }: PlanAnualProps) {
             {showPercent ? '% sueldo' : 'Importes'}
           </button>
         </div>
+
+        {/* Selector de vista */}
+        <div className="grid grid-cols-3 gap-2">
+          {VISTAS.map(v => {
+            const Icon = v.icono;
+            const activa = vista === v.id;
+            return (
+              <button
+                key={v.id}
+                onClick={() => { setVista(v.id); setRefreshKey(k => k + 1); }}
+                className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-all ${activa ? 'bg-accent text-white ring-2 ring-accent' : 'bg-surface text-muted border border-border'}`}
+              >
+                <Icon size={14} /> {v.nombre}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="p-4 space-y-5 mt-2">
         <div className="flex items-baseline justify-between px-1">
-          <h2 className="text-xl font-bold font-display tracking-tight text-text">Plan anual</h2>
-          <span className="text-xs text-muted">Planificación manual</span>
+          <h2 className="text-xl font-bold font-display tracking-tight text-text">
+            {vista === 'plan' ? 'Plan anual' : vista === 'escenario' ? 'Escenario: ¿y si…?' : 'Así va de verdad'}
+          </h2>
+          <span className="text-xs text-muted">
+            {vista === 'plan' ? 'Lo que planeas' : vista === 'escenario' ? 'Prueba sin miedo' : 'Tus movimientos'}
+          </span>
         </div>
 
         {/* Resumen del año */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-surface border border-border rounded-2xl p-3 text-center shadow-card">
             <p className="text-[10px] uppercase font-bold text-muted tracking-wide mb-1">Ingresos</p>
-            <p className="text-sm font-mono font-bold text-success truncate">{formatCurrency(totalSueldo)}</p>
+            <p className="text-sm font-mono font-bold text-success truncate">{formatCurrency(tot.sueldo)}</p>
+            {comparaConPlan && <Delta valor={tot.sueldo} plan={totPlan.sueldo} />}
           </div>
           <div className="bg-surface border border-border rounded-2xl p-3 text-center shadow-card">
             <p className="text-[10px] uppercase font-bold text-muted tracking-wide mb-1">Remanente</p>
-            <p className={`text-sm font-mono font-bold truncate ${totalRemanente >= 0 ? 'text-text' : 'text-danger'}`}>{formatCurrency(totalRemanente)}</p>
+            <p className={`text-sm font-mono font-bold truncate ${tot.remanente >= 0 ? 'text-text' : 'text-danger'}`}>{formatCurrency(tot.remanente)}</p>
+            {comparaConPlan && <Delta valor={tot.remanente} plan={totPlan.remanente} />}
           </div>
           <div className="bg-surface border border-border rounded-2xl p-3 text-center shadow-card">
             <p className="text-[10px] uppercase font-bold text-muted tracking-wide mb-1">Tasa ahorro</p>
@@ -162,20 +191,33 @@ export function PlanAnual({ onNavigate }: PlanAnualProps) {
           </div>
         </div>
 
-        {/* Tabla editable */}
+        {/* Escenario vacío: arrancar desde el plan */}
+        {vista === 'escenario' && escenarioVacio && (
+          <div className="bg-surface border border-accent/30 rounded-2xl p-4 space-y-3">
+            <p className="text-sm text-text font-bold">Tu escenario está vacío.</p>
+            <p className="text-xs text-muted">
+              Un escenario es una copia de tu plan para probar cambios ("¿y si pago menos alquiler?", "¿y si invierto 100 € más?") sin tocar el plan de verdad.
+            </p>
+            <Button onClick={handleEmpezarEscenarioDesdePlan} className="w-full h-11 text-sm font-bold">
+              <Copy size={15} className="mr-1.5" /> Empezar desde mi plan
+            </Button>
+          </div>
+        )}
+
+        {/* Tabla */}
         <div className="bg-surface border border-border rounded-2xl shadow-card overflow-hidden">
           <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b border-border">
                   <th className={`${thBase} ${stickyCol} text-left text-muted`}>Mes</th>
-                  <th className={`${thBase} text-right`} style={{ color: SUELDO_COLOR }}>Sueldo</th>
-                  {grupos.map((g) => (
-                    <th key={g.id} className={`${thBase} text-right`}>
-                      <button onClick={() => handleEditGrupo(g)} className="inline-flex items-center gap-1 hover:opacity-80" style={{ color: g.color }}>
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: g.color }} />
-                        {g.nombre}
-                      </button>
+                  <th className={`${thBase} text-right`} style={{ color: SUELDO_COLOR }}>{vista === 'real' ? 'Ingresos' : 'Sueldo'}</th>
+                  {PLAN_COLUMNAS.map((c) => (
+                    <th key={c.id} className={`${thBase} text-right`} style={{ color: c.color }}>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} />
+                        {c.nombre}
+                      </span>
                     </th>
                   ))}
                   <th className={`${thBase} text-right`} style={{ color: REMANENTE_COLOR }}>Remanente</th>
@@ -184,31 +226,45 @@ export function PlanAnual({ onNavigate }: PlanAnualProps) {
               <tbody>
                 {MESES.map((mes, i) => {
                   const f = filas[i];
-                  const rem = remanenteFila(i);
+                  const fPlan = filasPlan[i];
+                  const rem = remanenteFila(f);
                   return (
                     <tr key={i} className="border-b border-border/50 last:border-0 hover:bg-surface-elevated/40">
                       <td className={`${stickyCol} px-2 py-1.5 text-xs font-bold text-text whitespace-nowrap`}>
                         <span className="hidden sm:inline">{mes}</span>
                         <span className="sm:hidden">{MES_CORTO[i]}</span>
                       </td>
-                      <td key={`sueldo-${year}-${refreshKey}`} className={cellBase}>
+                      <td key={`sueldo-${year}-${vista}-${refreshKey}`} className={cellBase}>
                         {showPercent ? (
                           <span className="text-muted pr-1.5">100%</span>
+                        ) : esEditable ? (
+                          <CellInput value={f.sueldo} accent={SUELDO_COLOR} onCommit={(n) => setPlanCell(year, i, 'sueldo', n, vista as PlanAmbito)} />
                         ) : (
-                          <CellInput value={f.sueldo} accent={SUELDO_COLOR} onCommit={(n) => setPlanCell(year, i, 'sueldo', n)} />
+                          <span className="pr-1.5">
+                            {formatCurrency(f.sueldo)}
+                            {comparaConPlan && <Delta valor={f.sueldo} plan={fPlan.sueldo} />}
+                          </span>
                         )}
                       </td>
-                      {grupos.map((g) => (
-                        <td key={`${g.id}-${year}-${refreshKey}`} className={cellBase}>
+                      {PLAN_COLUMNAS.map((c) => (
+                        <td key={`${c.id}-${year}-${vista}-${refreshKey}`} className={cellBase}>
                           {showPercent ? (
-                            <span className="text-muted pr-1.5">{pct(f.grupos?.[g.id] || 0, f.sueldo || 0)}</span>
+                            <span className="text-muted pr-1.5">{pct(f.grupos?.[c.id] || 0, f.sueldo || 0)}</span>
+                          ) : esEditable ? (
+                            <CellInput value={f.grupos?.[c.id] || 0} accent={c.color} onCommit={(n) => setPlanCell(year, i, c.id, n, vista as PlanAmbito)} />
                           ) : (
-                            <CellInput value={f.grupos?.[g.id] || 0} accent={g.color} onCommit={(n) => setPlanCell(year, i, g.id, n)} />
+                            <span className="pr-1.5">
+                              {formatCurrency(f.grupos?.[c.id] || 0)}
+                              {comparaConPlan && <Delta valor={f.grupos?.[c.id] || 0} plan={fPlan.grupos?.[c.id] || 0} invertir />}
+                            </span>
                           )}
                         </td>
                       ))}
                       <td className={`${cellBase} font-bold ${rem >= 0 ? 'text-text' : 'text-danger'}`}>
-                        <span className="pr-1.5">{showPercent ? pct(rem, f.sueldo || 0) : formatCurrency(rem)}</span>
+                        <span className="pr-1.5">
+                          {showPercent ? pct(rem, f.sueldo || 0) : formatCurrency(rem)}
+                          {!showPercent && comparaConPlan && <Delta valor={rem} plan={remanenteFila(fPlan)} />}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -218,15 +274,15 @@ export function PlanAnual({ onNavigate }: PlanAnualProps) {
                 <tr className="border-t-2 border-border bg-surface-elevated/60">
                   <td className={`${stickyCol} bg-surface-elevated px-2 py-2 text-[11px] font-black uppercase tracking-wider text-text`}>Total</td>
                   <td className={`${cellBase} font-black`} style={{ color: SUELDO_COLOR }}>
-                    <span className="pr-1.5">{showPercent ? '100%' : formatCurrency(totalSueldo)}</span>
+                    <span className="pr-1.5">{showPercent ? '100%' : formatCurrency(tot.sueldo)}</span>
                   </td>
-                  {grupos.map((g) => (
-                    <td key={g.id} className={`${cellBase} font-black`} style={{ color: g.color }}>
-                      <span className="pr-1.5">{showPercent ? pct(totalPorGrupo[g.id], totalSueldo) : formatCurrency(totalPorGrupo[g.id])}</span>
+                  {PLAN_COLUMNAS.map((c) => (
+                    <td key={c.id} className={`${cellBase} font-black`} style={{ color: c.color }}>
+                      <span className="pr-1.5">{showPercent ? pct(tot.porCol[c.id], tot.sueldo) : formatCurrency(tot.porCol[c.id])}</span>
                     </td>
                   ))}
                   <td className={`${cellBase} font-black`} style={{ color: REMANENTE_COLOR }}>
-                    <span className="pr-1.5">{showPercent ? pct(totalRemanente, totalSueldo) : formatCurrency(totalRemanente)}</span>
+                    <span className="pr-1.5">{showPercent ? pct(tot.remanente, tot.sueldo) : formatCurrency(tot.remanente)}</span>
                   </td>
                 </tr>
               </tfoot>
@@ -234,51 +290,28 @@ export function PlanAnual({ onNavigate }: PlanAnualProps) {
           </div>
         </div>
 
-        {/* Acciones */}
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            <Button variant="secondary" className="flex-1" onClick={handleNewGrupo}>
-              <Plus size={16} className="mr-1" /> Añadir grupo
+        {/* Acciones y ayuda */}
+        {esEditable ? (
+          <div className="flex flex-col gap-2">
+            <Button variant="secondary" className="w-full" onClick={handleCopiar}>
+              <Copy size={16} className="mr-1" /> Copiar enero a todo el año
             </Button>
-            <Button variant="secondary" className="flex-1" onClick={handleCopiar}>
-              <Copy size={16} className="mr-1" /> Copiar enero
-            </Button>
+            <p className="text-[11px] text-muted text-center px-2">
+              Fijos, Variables e Inversión se rellenan con lo que planeas gastar. El remanente se calcula solo (sueldo − gastos).
+            </p>
           </div>
-          <p className="text-[11px] text-muted text-center px-2">
-            Toca el nombre de un grupo para renombrarlo, cambiar color o eliminarlo. El remanente se calcula solo (sueldo − grupos).
-          </p>
-        </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p className="text-[11px] text-muted text-center px-2">
+              Estos números salen de tus movimientos: los ingresos van a "Ingresos" y cada gasto a la columna de su categoría (fijo, variable o inversión).
+              {comparaConPlan && ' En verde, mejor que el plan; en rojo, peor.'}
+            </p>
+            <button onClick={() => onNavigate?.('categorias')} className="w-full flex items-center justify-center gap-2 text-sm text-muted hover:text-text transition-colors py-1.5">
+              <Tag size={15} /> Asignar macro-grupo a mis categorías
+            </button>
+          </div>
+        )}
       </div>
-
-      {/* Editor de grupo */}
-      <Sheet isOpen={grupoSheetOpen} onClose={() => setGrupoSheetOpen(false)} title={editingGrupo ? 'Editar grupo' : 'Nuevo grupo'}>
-        <div className="space-y-6 pb-6 mt-4">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-muted uppercase tracking-wider">Nombre</label>
-            <input
-              type="text"
-              placeholder="Ej: Alquiler, Ocio, Inversión…"
-              value={grupoNombre}
-              onChange={(e) => setGrupoNombre(e.target.value)}
-              className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-muted uppercase tracking-wider">Color</label>
-            <ColorPicker value={grupoColor} onChange={setGrupoColor} />
-          </div>
-          <div className="flex flex-col gap-3 pt-2">
-            <Button onClick={handleSaveGrupo} disabled={!grupoNombre.trim()} className="w-full h-14 text-lg font-bold">
-              {editingGrupo ? 'Guardar cambios' : 'Crear grupo'}
-            </Button>
-            {editingGrupo && (
-              <Button variant="danger" onClick={handleDeleteGrupo} className="w-full h-12 text-base font-bold bg-transparent border border-border">
-                Eliminar grupo
-              </Button>
-            )}
-          </div>
-        </div>
-      </Sheet>
     </div>
   );
 }

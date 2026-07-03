@@ -1,6 +1,0 @@
-{
-  "name": "Finni",
-  "description": "App de finanzas personales, instalable como PWA en iOS y basada en el parseo de Excel con localStorage.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

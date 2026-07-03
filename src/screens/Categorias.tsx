@@ -4,6 +4,7 @@ import { Plus, ChevronLeft } from 'lucide-react';
 import { CategoryEditor } from '../components/ui/CategoryEditor';
 import { Categoria } from '../lib/storage/types';
 import { getIcon } from '../lib/icons';
+import { macroDeCategoria, MACRO_OPCIONES } from '../lib/plan/plan';
 
 export function Categorias({ onBack }: { onBack?: () => void }) {
   const { state } = useStore();
@@ -50,7 +51,14 @@ export function Categorias({ onBack }: { onBack?: () => void }) {
                 <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: `${c.color}20`, color: c.color }}>
                   <Icon size={20} />
                 </div>
-                <span className="font-bold text-text truncate max-w-[200px]">{c.nombre}</span>
+                <div className="min-w-0 text-left">
+                  <span className="font-bold text-text truncate max-w-[200px] block">{c.nombre}</span>
+                  {c.tipo !== 'ingreso' && (
+                    <span className="text-[10px] text-muted">
+                      {MACRO_OPCIONES.find(o => o.valor === macroDeCategoria(c))?.nombre}
+                    </span>
+                  )}
+                </div>
               </div>
               <span className="text-xs text-muted uppercase tracking-wider font-bold">{c.tipo}</span>
             </button>

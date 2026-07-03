@@ -22,12 +22,17 @@ export interface Movimiento {
   mesId?: string;
 }
 
+// Macro-grupo al que pertenece una categoría de gasto. Agrupa las categorías en
+// los tres grandes bloques del plan anual. Si falta, se trata como 'variable'.
+export type MacroTipo = 'fijo' | 'variable' | 'inversion';
+
 export interface Categoria {
   id: string;
   nombre: string;
   color: string;
   icono?: string;
   tipo: 'gasto' | 'ingreso' | 'ambos';
+  macro?: MacroTipo;
 }
 
 export interface Suscripcion {
@@ -43,6 +48,8 @@ export interface Suscripcion {
   inicio: string; // YYYY-MM-DD desde cuándo está activa
   // Última clave de periodo en la que ya se generó el cargo: 'YYYY-MM' (mensual) o 'YYYY' (anual)
   ultimoCargo?: string;
+  // true = recurrente de ingreso (nómina, alquiler cobrado…): genera movimientos positivos.
+  esIngreso?: boolean;
 }
 
 export interface NominaAncla {
@@ -71,22 +78,19 @@ export interface SavingsMeta {
 }
 
 // ---- Plan anual (planificación manual tipo hoja de cálculo) ----
-export interface PlanGrupo {
-  id: string;
-  nombre: string;
-  color: string;
-}
-
+// Las columnas del plan son fijas y se corresponden con los macro-grupos:
+// 'fijos' | 'variables' | 'inversion' (ver PLAN_COLUMNAS en lib/plan/plan.ts).
 export interface PlanFila {
   sueldo: number;
-  // importe planificado por grupo: { [grupoId]: number }
+  // importe planificado por macro-grupo: { [columnaId]: number }
   grupos: Record<string, number>;
 }
 
 export interface PlanAnual {
-  grupos: PlanGrupo[];
   // Por año natural -> 12 filas (índice 0 = enero, 11 = diciembre).
   datos: Record<string, PlanFila[]>;
+  // Escenario alternativo editable ("¿y si…?") con la misma estructura que datos.
+  escenario: Record<string, PlanFila[]>;
 }
 
 export interface AppState {

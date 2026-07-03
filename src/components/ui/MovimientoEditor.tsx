@@ -3,7 +3,9 @@ import { Sheet } from './Sheet';
 import { Button } from './Button';
 import { Movimiento } from '../../lib/storage/types';
 import { useStore } from '../../lib/storage/store';
+import { useToast } from './Toast';
 import { getLocalFechaIso } from '../../lib/utils';
+import { sugerirCategoria } from '../../lib/categorias/sugerencias';
 import { v4 as uuidv4 } from 'uuid';
 import { ArrowDownLeft, ArrowUpRight, Check, PieChart, Sparkle } from 'lucide-react';
 import { playIngreso, playGasto, playDelete, playClick } from '../../lib/audio/sounds';
@@ -18,6 +20,7 @@ interface MovimientoEditorProps {
 
 export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, defaultTipo }: MovimientoEditorProps) {
   const { state, addMovimiento, updateMovimiento, deleteMovimientos, getMesesActivos } = useStore();
+  const { toast } = useToast();
   const meses = getMesesActivos();
 
   const [tipo, setTipo] = useState<'gasto' | 'ingreso'>('gasto');
@@ -71,14 +74,26 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
     playClick();
   };
 
+  // Al escribir el concepto de un movimiento nuevo, si la categoría sigue vacía se
+  // rellena sola con la más usada para conceptos parecidos (el usuario puede cambiarla).
+  const handleConceptoChange = (valor: string) => {
+    setConcepto(valor);
+    if (!movimiento && !categoria) {
+      const sugerida = sugerirCategoria(valor, state.movimientos);
+      if (sugerida && state.categorias.some(c => c.id === sugerida)) {
+        setCategoria(sugerida);
+      }
+    }
+  };
+
   const handleSave = () => {
     const val = parseFloat(importe.replace(',', '.'));
     if (isNaN(val) || val <= 0) {
-      alert('Por favor, introduce un importe válido.');
+      toast('Escribe un importe mayor que cero para guardar.', 'error');
       return;
     }
     if (!concepto.trim()) {
-      alert('Por favor, introduce un concepto.');
+      toast('Ponle un concepto al movimiento (p. ej. "Compra semanal").', 'error');
       return;
     }
 
@@ -281,7 +296,7 @@ export function MovimientoEditor({ isOpen, onClose, movimiento, defaultDate, def
           <input
             type="text"
             value={concepto}
-            onChange={e => setConcepto(e.target.value)}
+            onChange={e => handleConceptoChange(e.target.value)}
             placeholder={tipo === 'gasto' ? '¿En qué te lo has gastado?' : '¿De dónde viene el ingreso?'}
             className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text focus:border-accent focus:ring-1 focus:ring-accent outline-none"
           />
