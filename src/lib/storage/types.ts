@@ -7,7 +7,7 @@ export interface Movimiento {
   concepto: string;
   categoria: string; // Categoria ID
   subcategoria?: string;
-  fuente: 'manual' | 'import:caixabank' | 'suscripcion';
+  fuente: 'manual' | 'import:caixabank' | 'suscripcion' | 'import:plantilla';
   hash: string;
   tags?: string[];
   notas?: string;

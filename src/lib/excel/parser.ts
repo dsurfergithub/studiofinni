@@ -17,7 +17,7 @@ function parseSpanishDate(dtStr: string): string {
   return '';
 }
 
-function parseNumberString(val: any): number {
+export function parseNumberString(val: any): number {
   if (typeof val === 'number') return val;
   let str = String(val).trim();
   // if format is something like "1.234,56" or "1,234.56"

@@ -4,8 +4,9 @@ import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import { Novedades } from '../components/ui/Novedades';
 import { APP_VERSION } from '../lib/changelog';
-import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, Megaphone } from 'lucide-react';
+import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone } from 'lucide-react';
 import { parseExcelData } from '../lib/excel/parser';
+import { descargarPlantillaGastos, parsePlantillaGastos } from '../lib/excel/plantilla';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
 import { getDeterministaColor } from '../lib/colors';
 import { sugerirCategoria } from '../lib/categorias/sugerencias';
@@ -17,6 +18,7 @@ import { getBackups, createManualBackup, migrate } from '../lib/storage/storage'
 export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
+  const plantillaInputRef = useRef<HTMLInputElement>(null);
   const { resetState, updateState, importState, state, getMesesActivos, setSelectedMesId, theme, toggleTheme } = useStore();
   const [audioEnabled, setAudioEnabled] = useState(soundsEnabled());
   const [backups, setBackups] = useState(getBackups());
@@ -112,6 +114,75 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
       playError(); console.error(err);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDownloadPlantilla = async () => {
+    try {
+      await descargarPlantillaGastos(state.categorias);
+      playSuccess();
+      toast('Plantilla descargada. Rellénala y súbela con "Importar plantilla de gastos".', 'ok');
+    } catch (err) {
+      playError();
+      toast((err as Error).message || 'No se pudo generar la plantilla.', 'error');
+    }
+  };
+
+  const handlePlantillaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        try {
+          const bs = evt.target?.result;
+          const hashesExistentes = new Set<string>(state.movimientos.map(m => m.hash));
+          const resultado = await parsePlantillaGastos(bs, state.categorias, hashesExistentes);
+
+          if (resultado.movimientos.length === 0 && resultado.errores.length === 0 && resultado.duplicadosEnArchivo === 0) {
+            playError();
+            toast('La plantilla no contiene ninguna fila con datos.', 'error');
+            return;
+          }
+
+          // Solo se AÑADEN movimientos y categorías nuevas. No se toca saldo, nóminas ni periodos.
+          if (resultado.movimientos.length > 0) {
+            const idsExistentes = new Set(state.categorias.map(c => c.id));
+            updateState({
+              movimientos: [...state.movimientos, ...resultado.movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha)),
+              categorias: [...state.categorias, ...resultado.nuevasCategorias.filter(c => !idsExistentes.has(c.id))],
+            });
+          }
+
+          let resumen = `${resultado.movimientos.length} movimientos añadidos.`;
+          if (resultado.duplicadosEnArchivo > 0) resumen += ` ${resultado.duplicadosEnArchivo} duplicados omitidos.`;
+          if (resultado.nuevasCategorias.length > 0) resumen += ` Categorías nuevas: ${resultado.nuevasCategorias.map(c => c.nombre).join(', ')}.`;
+
+          if (resultado.movimientos.length > 0) {
+            playSuccess();
+            toast(resumen, 'ok');
+          } else {
+            playError();
+          }
+          if (resultado.errores.length > 0) {
+            // Detalle por fila para que el usuario pueda corregir el archivo.
+            const muestra = resultado.errores.slice(0, 8).join('\n');
+            alert(`${resultado.errores.length} filas con error (no importadas):\n\n${muestra}${resultado.errores.length > 8 ? '\n…' : ''}`);
+          }
+        } catch (err) {
+          playError();
+          toast((err as Error).message || 'No se pudo leer la plantilla.', 'error');
+        }
+      };
+      reader.readAsBinaryString(file);
+    } catch (err) {
+      playError();
+      console.error(err);
+    } finally {
+      if (plantillaInputRef.current) {
+        plantillaInputRef.current.value = '';
+      }
     }
   };
 
@@ -272,10 +343,17 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
 
           <input type="file" accept=".xls,.xlsx" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
           <input type="file" accept=".json,application/json" className="hidden" ref={restoreInputRef} onChange={handleRestoreFile} />
+          <input type="file" accept=".xls,.xlsx" className="hidden" ref={plantillaInputRef} onChange={handlePlantillaUpload} />
 
           <div className="grid gap-3">
             <Button variant="secondary" className="w-full justify-start py-6 rounded-2xl border-border bg-surface hover:bg-surface-elevated" onClick={() => fileInputRef.current?.click()}>
               <Upload className="mr-3 text-accent" size={20} /> Importar extracto bancario
+            </Button>
+            <Button variant="secondary" className="w-full justify-start py-6 rounded-2xl border-border bg-surface hover:bg-surface-elevated" onClick={handleDownloadPlantilla}>
+              <FileSpreadsheet className="mr-3 text-accent" size={20} /> Descargar plantilla de gastos
+            </Button>
+            <Button variant="secondary" className="w-full justify-start py-6 rounded-2xl border-border bg-surface hover:bg-surface-elevated" onClick={() => plantillaInputRef.current?.click()}>
+              <FileUp className="mr-3 text-accent" size={20} /> Importar plantilla de gastos
             </Button>
             <Button variant="secondary" className="w-full justify-start py-6 rounded-2xl border-border bg-surface hover:bg-surface-elevated" onClick={handleDownloadBackup}>
               <Download className="mr-3 text-success" size={20} /> Exportar backup (JSON)
