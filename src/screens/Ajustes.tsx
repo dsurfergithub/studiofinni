@@ -12,7 +12,7 @@ import { getDeterministaColor } from '../lib/colors';
 import { sugerirCategoria } from '../lib/categorias/sugerencias';
 import { movimientosACsv } from '../lib/export/csv';
 import { v4 as uuidv4 } from 'uuid';
-import { derivarMeses, generarMesesFuturos, mesesRestantesDelAnio } from '../lib/finmes/finmes';
+import { derivarMeses, generarMesesFuturos, mesesRestantesDelAnio, mesesParaCubrir, mesIdDeMovimiento } from '../lib/finmes/finmes';
 import { getBackups, createManualBackup, migrate } from '../lib/storage/storage';
 
 export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) {
@@ -146,13 +146,35 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
             return;
           }
 
-          // Solo se AÑADEN movimientos y categorías nuevas. No se toca saldo, nóminas ni periodos.
+          // Solo se AÑADEN movimientos y categorías nuevas. No se toca saldo ni nóminas.
+          // Sí se planifican los periodos necesarios para que los movimientos importados
+          // caigan dentro de un mes visible (si no, cambiarían el saldo pero no aparecerían
+          // en la lista de Movimientos por estar fuera de todo periodo activo).
+          let mesDestino = '';
           if (resultado.movimientos.length > 0) {
             const idsExistentes = new Set(state.categorias.map(c => c.id));
+
+            const activeMeses = getMesesActivos();
+            const fechas = resultado.movimientos.map(m => m.fecha);
+            const minFecha = fechas.reduce((a, b) => (a < b ? a : b));
+            const maxFecha = fechas.reduce((a, b) => (a > b ? a : b));
+            const nuevosMeses = mesesParaCubrir(activeMeses, minFecha, maxFecha);
+
+            const mapaMeses = new Map<string, typeof nuevosMeses[number]>();
+            (state.mesesPersonalizados || []).forEach(m => mapaMeses.set(m.id, m));
+            nuevosMeses.forEach(m => mapaMeses.set(m.id, m));
+
             updateState({
               movimientos: [...state.movimientos, ...resultado.movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha)),
               categorias: [...state.categorias, ...resultado.nuevasCategorias.filter(c => !idsExistentes.has(c.id))],
+              ...(nuevosMeses.length > 0
+                ? { mesesPersonalizados: Array.from(mapaMeses.values()).sort((a, b) => b.inicio.localeCompare(a.inicio)) }
+                : {}),
             });
+
+            // Saltar al mes del movimiento importado más reciente para que se vea al instante.
+            const masReciente = resultado.movimientos.reduce((a, b) => (a.fecha > b.fecha ? a : b));
+            mesDestino = mesIdDeMovimiento(masReciente, [...activeMeses, ...nuevosMeses]) || '';
           }
 
           let resumen = `${resultado.movimientos.length} movimientos añadidos.`;
@@ -160,6 +182,7 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
           if (resultado.nuevasCategorias.length > 0) resumen += ` Categorías nuevas: ${resultado.nuevasCategorias.map(c => c.nombre).join(', ')}.`;
 
           if (resultado.movimientos.length > 0) {
+            if (mesDestino) setSelectedMesId(mesDestino);
             playSuccess();
             toast(resumen, 'ok');
           } else {
