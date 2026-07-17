@@ -114,6 +114,58 @@ export function generarMesesFuturos(baseMes: MesFinanciero, cantidad: number): M
   return generados;
 }
 
+/** Genera el periodo mensual inmediatamente ANTERIOR a `baseMes` (fin = inicio de base − 1 día). */
+export function generarMesAnterior(baseMes: MesFinanciero): MesFinanciero {
+  const [y, mIndex, d] = baseMes.inicio.split('-').map(Number);
+  const finDate = new Date(y, mIndex - 1, d - 1); // día antes del inicio de base
+  const finStr = dateToString(finDate);
+  // inicio ≈ un mes natural antes del día siguiente al fin
+  const inicioDate = new Date(finDate.getFullYear(), finDate.getMonth() - 1, finDate.getDate() + 1);
+  const inicioStr = dateToString(inicioDate);
+  const { nombre, clave } = calcularNombreMes(inicioStr, finStr);
+  return { id: `mes-${clave}`, nombre, clave, inicio: inicioStr, fin: finStr, esEstimado: true };
+}
+
+/**
+ * Devuelve los periodos que hay que AÑADIR a `activeMeses` para que el rango
+ * [minFecha, maxFecha] (YYYY-MM-DD) quede cubierto, extendiendo la cadena de
+ * meses de forma contigua hacia adelante y/o atrás (sin huecos ni solapes).
+ * No modifica los meses existentes. Se usa al importar movimientos cuyas fechas
+ * caen fuera de los periodos actuales, para que no queden huérfanos (invisibles
+ * en las vistas por mes aunque sí afecten al saldo).
+ */
+export function mesesParaCubrir(
+  activeMeses: MesFinanciero[],
+  minFecha: string,
+  maxFecha: string
+): MesFinanciero[] {
+  const nuevos: MesFinanciero[] = [];
+  if (activeMeses.length === 0 || !minFecha || !maxFecha) return nuevos;
+
+  const asc = [...activeMeses].sort((a, b) => a.inicio.localeCompare(b.inicio));
+  let oldest = asc[0];
+  let newest = asc[asc.length - 1];
+  const idsExistentes = new Set(activeMeses.map(m => m.id));
+
+  // Extender hacia el futuro hasta cubrir maxFecha
+  while (maxFecha > newest.fin) {
+    const [next] = generarMesesFuturos(newest, 1);
+    if (!next || idsExistentes.has(next.id) || next.fin <= newest.fin) break;
+    nuevos.push(next);
+    idsExistentes.add(next.id);
+    newest = next;
+  }
+  // Extender hacia el pasado hasta cubrir minFecha
+  while (minFecha < oldest.inicio) {
+    const prev = generarMesAnterior(oldest);
+    if (!prev || idsExistentes.has(prev.id) || prev.inicio >= oldest.inicio) break;
+    nuevos.push(prev);
+    idsExistentes.add(prev.id);
+    oldest = prev;
+  }
+  return nuevos;
+}
+
 /** Nº de meses naturales que quedan hasta diciembre desde el mes de `baseMes`. */
 export function mesesRestantesDelAnio(baseMes: MesFinanciero): number {
   const [, mStr] = baseMes.clave.split('-');

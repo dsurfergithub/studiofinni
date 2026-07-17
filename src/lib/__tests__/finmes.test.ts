@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   derivarMeses, calcularNombreMes, generarMesesFuturos, mesesRestantesDelAnio,
   mesIdDeMovimiento, movimientoEnMes, fechaDentroDeMes,
+  generarMesAnterior, mesesParaCubrir,
 } from '../finmes/finmes';
 import type { MesFinanciero, Movimiento } from '../storage/types';
 
@@ -69,6 +70,51 @@ describe('generarMesesFuturos', () => {
     const meses = derivarMeses(nominas);
     const fut = generarMesesFuturos(meses[0], 3);
     expect(fut[0].inicio).toBe('2026-07-25');
+  });
+});
+
+describe('generarMesAnterior', () => {
+  const base: MesFinanciero = { id: 'mes-2026-07', nombre: 'Julio 2026', clave: '2026-07', inicio: '2026-07-01', fin: '2026-07-31' };
+
+  it('termina el día antes del inicio de base (contiguo, sin solape)', () => {
+    const prev = generarMesAnterior(base);
+    expect(prev.fin).toBe('2026-06-30'); // justo antes del 2026-07-01
+    expect(prev.inicio < prev.fin).toBe(true);
+    expect(prev.clave).toBe('2026-06'); // el mes natural con más días del rango
+  });
+
+  it('es contiguo también con periodos de mitad de mes', () => {
+    const meses = derivarMeses(nominas); // meses[meses.length-1] = abril, inicio 2026-04-27
+    const abril = meses[meses.length - 1];
+    const prev = generarMesAnterior(abril);
+    expect(prev.fin).toBe('2026-04-26');
+  });
+});
+
+describe('mesesParaCubrir', () => {
+  const meses = derivarMeses(nominas); // cubre 2026-04-27 .. 2026-07-24
+
+  it('no añade nada si el rango ya está cubierto', () => {
+    expect(mesesParaCubrir(meses, '2026-05-10', '2026-07-01')).toHaveLength(0);
+  });
+
+  it('extiende al futuro para cubrir una fecha posterior (contiguo, sin solapes)', () => {
+    const nuevos = mesesParaCubrir(meses, '2026-07-10', '2026-09-15');
+    expect(nuevos.length).toBeGreaterThan(0);
+    // El primero arranca justo tras el fin del periodo más nuevo (2026-07-24)
+    const cronologicos = [...nuevos].sort((a, b) => a.inicio.localeCompare(b.inicio));
+    expect(cronologicos[0].inicio).toBe('2026-07-25');
+    // Alguno cubre la fecha máxima
+    expect(nuevos.some(m => '2026-09-15' >= m.inicio && '2026-09-15' <= m.fin)).toBe(true);
+  });
+
+  it('extiende al pasado para cubrir una fecha anterior', () => {
+    const nuevos = mesesParaCubrir(meses, '2026-03-10', '2026-07-01');
+    expect(nuevos.some(m => '2026-03-10' >= m.inicio && '2026-03-10' <= m.fin)).toBe(true);
+  });
+
+  it('devuelve [] si no hay meses de los que partir', () => {
+    expect(mesesParaCubrir([], '2026-01-01', '2026-12-31')).toHaveLength(0);
   });
 });
 
