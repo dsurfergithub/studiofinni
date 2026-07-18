@@ -108,10 +108,15 @@ export async function parsePlantillaGastos(
 ): Promise<ResultadoPlantilla> {
   const XLSX = await import('xlsx');
 
-  const wb = XLSX.read(fileData, { type: 'binary' });
+  // raw:true en la LECTURA además del sheet_to_json: evita que SheetJS "adivine" las
+  // fechas de texto ambiguas (DD/MM vs MM/DD) y las convierta a serie usando el formato
+  // US (05/07 → 5-mayo en vez de 5-julio). Con raw:true recibimos el valor original
+  // (string tal cual o serie de Excel de una celda-fecha real) y es NUESTRO parseFecha
+  // —determinista DD/MM— quien decide. Sin esto, los gastos de un mes acaban en otro y
+  // desaparecen de la lista de Movimientos del mes que miras.
+  const wb = XLSX.read(fileData, { type: 'binary', raw: true });
   const sheetName = wb.SheetNames.find(n => normalizar(n) === 'GASTOS') || wb.SheetNames[0];
   const sheet = wb.Sheets[sheetName];
-  // raw:true para recibir fechas como número de serie (sin ambigüedad de locale)
   const rawData = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: true, defval: '' });
 
   let headerRowIndex = -1;
