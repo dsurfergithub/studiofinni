@@ -151,6 +151,7 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
           // caigan dentro de un mes visible (si no, cambiarían el saldo pero no aparecerían
           // en la lista de Movimientos por estar fuera de todo periodo activo).
           let mesDestino = '';
+          let periodosConNuevos = 0;
           if (resultado.movimientos.length > 0) {
             const idsExistentes = new Set(state.categorias.map(c => c.id));
 
@@ -172,12 +173,26 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
                 : {}),
             });
 
-            // Saltar al mes del movimiento importado más reciente para que se vea al instante.
-            const masReciente = resultado.movimientos.reduce((a, b) => (a.fecha > b.fecha ? a : b));
-            mesDestino = mesIdDeMovimiento(masReciente, [...activeMeses, ...nuevosMeses]) || '';
+            // Los meses de Finni se anclan a la nómina (~día 15), así que un movimiento de
+            // primeros de mes cae en el periodo del mes anterior. Al importar en bloque, los
+            // nuevos pueden repartirse en varios periodos. Saltamos al que recibe MÁS (no al
+            // del más reciente): así el usuario aterriza donde está el grueso y no cree que
+            // "no se importó nada" al ver solo un par en el periodo del último movimiento.
+            const allMeses = [...activeMeses, ...nuevosMeses];
+            const conteoPorMes = new Map<string, number>();
+            for (const m of resultado.movimientos) {
+              const id = mesIdDeMovimiento(m, allMeses);
+              if (id) conteoPorMes.set(id, (conteoPorMes.get(id) || 0) + 1);
+            }
+            const ranking = Array.from(conteoPorMes.entries())
+              .map(([id, count]) => ({ id, count, inicio: allMeses.find(mm => mm.id === id)?.inicio || '' }))
+              .sort((a, b) => b.count - a.count || b.inicio.localeCompare(a.inicio));
+            mesDestino = ranking[0]?.id || '';
+            periodosConNuevos = ranking.length;
           }
 
           let resumen = `${resultado.movimientos.length} movimientos añadidos.`;
+          if (periodosConNuevos > 1) resumen += ` Se reparten en ${periodosConNuevos} periodos (cámbialos con el selector de mes).`;
           if (resultado.duplicadosEnArchivo > 0) resumen += ` ${resultado.duplicadosEnArchivo} duplicados omitidos.`;
           if (resultado.nuevasCategorias.length > 0) resumen += ` Categorías nuevas: ${resultado.nuevasCategorias.map(c => c.nombre).join(', ')}.`;
 

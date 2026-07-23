@@ -50,3 +50,28 @@ describe('parsePlantillaGastos — fechas DD/MM deterministas', () => {
     expect(f).toEqual(['2026-07-05', '2026-12-12']);
   });
 });
+
+describe('parsePlantillaGastos — deduplicado por NOTAS', () => {
+  it('no colapsa movimientos con mismo día/importe/concepto pero notas distintas', async () => {
+    // Caso real: plantilla del banco con la categoría en CONCEPTO y el detalle en NOTAS.
+    const file = xlsxDesde([
+      HEADER,
+      ['13/07/2026', 'Otros ingresos', 32, 'Otros ingresos', 'Ingreso', 'Bizum de Demba'],
+      ['13/07/2026', 'Otros ingresos', 32, 'Otros ingresos', 'Ingreso', 'Bizum de Eloy'],
+    ]);
+    const res = await parsePlantillaGastos(file, cats, new Set());
+    expect(res.movimientos).toHaveLength(2);
+    expect(res.duplicadosEnArchivo).toBe(0);
+  });
+
+  it('sí deduplica filas idénticas (mismas notas) al re-subir el archivo', async () => {
+    const file = xlsxDesde([
+      HEADER,
+      ['13/07/2026', 'Otros ingresos', 32, 'Otros ingresos', 'Ingreso', 'Bizum de Demba'],
+      ['13/07/2026', 'Otros ingresos', 32, 'Otros ingresos', 'Ingreso', 'Bizum de Demba'],
+    ]);
+    const res = await parsePlantillaGastos(file, cats, new Set());
+    expect(res.movimientos).toHaveLength(1);
+    expect(res.duplicadosEnArchivo).toBe(1);
+  });
+});
