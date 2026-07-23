@@ -196,14 +196,19 @@ export async function parsePlantillaGastos(
       nuevasCategorias.push(cat);
     }
 
-    const hash = `${fecha}|${importe.toFixed(2)}|${concepto.toLowerCase()}`;
+    const notas = idxNotas !== -1 ? String(row[idxNotas] ?? '').trim() : '';
+
+    // Las NOTAS forman parte de la huella anti-duplicados. En plantillas exportadas del
+    // banco el CONCEPTO suele ser la categoría ("Otros ingresos") y el detalle que
+    // distingue cada movimiento (p. ej. de quién es el Bizum) va en NOTAS. Sin incluirlas,
+    // dos movimientos del mismo día, importe y categoría se colapsaban en uno y se perdían.
+    // Re-subir el mismo archivo sigue deduplicando bien porque las notas son idénticas.
+    const hash = `${fecha}|${importe.toFixed(2)}|${concepto.toLowerCase()}|${notas.toLowerCase()}`;
     if (hashesExistentes.has(hash) || hashesVistos.has(hash)) {
       duplicadosEnArchivo++;
       continue;
     }
     hashesVistos.add(hash);
-
-    const notas = idxNotas !== -1 ? String(row[idxNotas] ?? '').trim() : '';
 
     movimientos.push({
       id: uuidv4(),
