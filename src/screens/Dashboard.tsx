@@ -68,8 +68,11 @@ export function Dashboard({ selectedMesId, onChangeMes, onNavigate }: DashboardP
     return <>{formatted}</>;
   };
 
+  // h-full es imprescindible: <main> tiene overflow-hidden, así que sin altura definida
+  // este contenedor crecía y se recortaba en vez de hacer scroll (solo se veían 3
+  // categorías del Top).
   return (
-    <div className="flex-1 flex flex-col pt-safe pb-24 scroll-area">
+    <div className="flex-1 flex flex-col pt-safe pb-24 h-full scroll-area">
       <div className="sticky top-0 bg-bg/80 backdrop-blur-lg z-10">
         <FinMesSelector selectedMesId={selectedMesId} onChange={onChangeMes} />
       </div>

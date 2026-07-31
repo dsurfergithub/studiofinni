@@ -413,7 +413,15 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
         {/* Créditos */}
         <footer className="text-center space-y-1 pb-2">
           <p className="text-xs text-muted">
-            Hecho con <span className="text-danger">♥</span> por <span className="font-bold text-accent">@dsurfer</span>
+            Hecho con <span className="text-danger">♥</span> por{' '}
+            <a
+              href="https://github.com/dsurfergithub"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-bold text-accent hover:underline"
+            >
+              @dsurfergithub
+            </a>
           </p>
           <p className="text-[10px] font-mono text-dim">Finni v{APP_VERSION} · tus datos nunca salen de tu dispositivo</p>
         </footer>

@@ -26,7 +26,7 @@ function barColor(perc: number) {
 
 export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: PresupuestoProps) {
   const {
-    state, getMesesActivos, updateState, addMovimiento, addCategoria,
+    state, getMesesActivos, updateState, addMovimiento, addCategoria, getSaldoCalculado,
     isBudgeted, getPresupuestoCat, setBudgetTemplate, setBudgetForMonth, removeFromBudget,
   } = useStore();
   const { toast } = useToast();
@@ -84,6 +84,12 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
   const disponible = totalPresupuestado - totalGastado;
   const ppc = totalPresupuestado > 0 ? (totalGastado / totalPresupuestado) * 100 : 0;
   const isHealthy = ppc <= 100;
+
+  // Visión completa: el presupuesto dice cuánto "puedes" gastar, el saldo cuánto
+  // dinero hay de verdad. Se muestran juntos porque pueden discrepar (gastos
+  // puntuales fuera de presupuesto, aportaciones a metas, categorías sin límite).
+  const saldoReal = getSaldoCalculado();
+  const gastoRealMes = totalGastado + gastoPuntual + sinPresupuesto.reduce((acc, s) => acc + s.spent, 0);
 
   const savingsMetas: SavingsMeta[] = state.savingsMetas || [];
 
@@ -229,6 +235,24 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
               {formatCurrency(gastoPuntual)} en gastos puntuales (no cuentan para el presupuesto)
             </p>
           )}
+
+          {/* Dinero real: lo que queda de presupuesto no es lo que queda en la cuenta. */}
+          <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[10px] uppercase font-bold text-muted tracking-widest mb-1">Dinero restante</p>
+              <p className={`text-xl font-mono font-bold tracking-tight ${saldoReal >= 0 ? 'text-text' : 'text-danger'}`}>
+                {formatCurrency(saldoReal)}
+              </p>
+              <p className="text-[10px] text-dim mt-0.5">saldo real en cuenta</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] uppercase font-bold text-muted tracking-widest mb-1">Gasto del mes</p>
+              <p className="text-xl font-mono font-bold tracking-tight text-danger">
+                -{formatCurrency(gastoRealMes)}
+              </p>
+              <p className="text-[10px] text-dim mt-0.5">todo incluido</p>
+            </div>
+          </div>
         </div>
 
         {/* Objetivos de ahorro */}
