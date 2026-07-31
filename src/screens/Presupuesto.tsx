@@ -85,10 +85,12 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
   const ppc = totalPresupuestado > 0 ? (totalGastado / totalPresupuestado) * 100 : 0;
   const isHealthy = ppc <= 100;
 
-  // Visión completa: el presupuesto dice cuánto "puedes" gastar, el saldo cuánto
-  // dinero hay de verdad. Se muestran juntos porque pueden discrepar (gastos
-  // puntuales fuera de presupuesto, aportaciones a metas, categorías sin límite).
+  // Foto de cómo acabará el mes: el saldo de hoy menos el presupuesto que AÚN no se ha
+  // gastado. Lo ya gastado no se resta otra vez (el saldo real ya lo refleja) y un
+  // presupuesto excedido no devuelve dinero, de ahí el max(0, ...).
   const saldoReal = getSaldoCalculado();
+  const presupuestoPendiente = Math.max(0, disponible);
+  const saldoProyectado = saldoReal - presupuestoPendiente;
   const gastoRealMes = totalGastado + gastoPuntual + sinPresupuesto.reduce((acc, s) => acc + s.spent, 0);
 
   const savingsMetas: SavingsMeta[] = state.savingsMetas || [];
@@ -236,21 +238,23 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
             </p>
           )}
 
-          {/* Dinero real: lo que queda de presupuesto no es lo que queda en la cuenta. */}
-          <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-[10px] uppercase font-bold text-muted tracking-widest mb-1">Dinero restante</p>
-              <p className={`text-xl font-mono font-bold tracking-tight ${saldoReal >= 0 ? 'text-text' : 'text-danger'}`}>
-                {formatCurrency(saldoReal)}
-              </p>
-              <p className="text-[10px] text-dim mt-0.5">saldo real en cuenta</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] uppercase font-bold text-muted tracking-widest mb-1">Gasto del mes</p>
-              <p className="text-xl font-mono font-bold tracking-tight text-danger">
-                -{formatCurrency(gastoRealMes)}
-              </p>
-              <p className="text-[10px] text-dim mt-0.5">todo incluido</p>
+          {/* Dinero restante de verdad: cómo acabará el mes si se agota el presupuesto. */}
+          <div className="mt-4 pt-4 border-t border-border">
+            <p className="text-[10px] uppercase font-bold text-muted tracking-widest mb-1">Dinero restante al acabar el mes</p>
+            <p className={`text-3xl font-black font-mono tracking-tight ${saldoProyectado >= 0 ? 'text-text' : 'text-danger'}`}>
+              {formatCurrency(saldoProyectado)}
+            </p>
+            <p className="text-[11px] text-muted mt-1.5">
+              <span className="font-mono">{formatCurrency(saldoReal)}</span> ahora
+              {presupuestoPendiente > 0 ? (
+                <> − <span className="font-mono">{formatCurrency(presupuestoPendiente)}</span> de presupuesto por gastar</>
+              ) : (
+                <> · presupuesto ya agotado</>
+              )}
+            </p>
+            <div className="mt-3 flex justify-between text-[11px] text-dim">
+              <span>Gasto del mes (todo incluido)</span>
+              <span className="font-mono">-{formatCurrency(gastoRealMes)}</span>
             </div>
           </div>
         </div>
