@@ -3,17 +3,9 @@ import { useStore } from '../lib/storage/store';
 import { useToast } from '../components/ui/Toast';
 import { Button } from '../components/ui/Button';
 import { ChevronLeft, Check, CopyCheck, ShieldCheck } from 'lucide-react';
-import { formatCurrency } from '../lib/utils';
+import { formatCurrency, ETIQUETA_FUENTE } from '../lib/utils';
 import { buscarDuplicados, idsSobrantes, ETIQUETA_MOTIVO, GrupoDuplicado } from '../lib/duplicados/duplicados';
-import { Movimiento } from '../lib/storage/types';
 import { playSuccess } from '../lib/audio/sounds';
-
-const ORIGEN: Record<Movimiento['fuente'], string> = {
-  'manual': 'a mano',
-  'import:plantilla': 'plantilla',
-  'import:caixabank': 'extracto',
-  'suscripcion': 'suscripción',
-};
 
 export function Duplicados({ onBack }: { onBack?: () => void }) {
   const { state, deleteMovimientos } = useStore();
@@ -126,7 +118,7 @@ export function Duplicados({ onBack }: { onBack?: () => void }) {
                         <span className="min-w-0 flex-1">
                           <span className={`block text-sm truncate ${activo ? 'text-danger line-through' : 'text-text'}`}>{m.concepto}</span>
                           <span className="block text-[11px] font-mono text-muted">
-                            {m.fecha} · {ORIGEN[m.fuente] || m.fuente}
+                            {m.fecha} · {ETIQUETA_FUENTE[m.fuente] || m.fuente}
                             {sobrantes.has(m.id) ? '' : ' · manda'}
                           </span>
                         </span>

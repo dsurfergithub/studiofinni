@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.5.1';
+export const APP_VERSION = '2.6.0';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.6.0',
+    fecha: '2026-08-15',
+    titulo: 'El extracto de cualquier banco',
+    cambios: [
+      { tipo: 'nuevo', texto: 'Importar y comparar extractos ya no depende de un banco concreto: la app reconoce las columnas por su nombre (en español o en inglés) y, si no hay títulos, las deduce mirando el contenido.' },
+      { tipo: 'nuevo', texto: 'Si aun así no las reconoce, te enseña las columnas con sus primeros valores y le dices tú cuál es cada una. Antes se rendía con un "formato no reconocido".' },
+      { tipo: 'nuevo', texto: 'Si acierta pero se equivoca de columna, "He leído mal las columnas" te deja corregirlo sin volver a subir el archivo.' },
+      { tipo: 'mejora', texto: 'Entiende más formatos de fecha (14/08/2026, 2026-08-14, 2026/08/14, 14-08-2026, 14.08.2026) y bancos que separan cargos y abonos en dos columnas.' },
+    ],
+  },
   {
     version: '2.5.1',
     fecha: '2026-08-15',

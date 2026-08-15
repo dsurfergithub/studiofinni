@@ -5,7 +5,9 @@ import { useToast } from '../components/ui/Toast';
 import { Novedades } from '../components/ui/Novedades';
 import { APP_VERSION } from '../lib/changelog';
 import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone, Scale, CopyCheck, GitCompare } from 'lucide-react';
-import { parseExcelData } from '../lib/excel/parser';
+import { parseExcelData, ErrorColumnas, adaptar, ParsedResultado } from '../lib/excel/parser';
+import { leerConMapeo, Analisis, Mapeo } from '../lib/excel/columnas';
+import { MapeoColumnas } from '../components/ui/MapeoColumnas';
 import { descargarPlantillaGastos, parsePlantillaGastos } from '../lib/excel/plantilla';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
 import { getDeterministaColor } from '../lib/colors';
@@ -38,6 +40,8 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
   const [backups, setBackups] = useState(getBackups());
   const [novedadesOpen, setNovedadesOpen] = useState(false);
   const [saldoBanco, setSaldoBanco] = useState('');
+  // Extracto leído cuyas columnas no se han reconocido: se guarda para mapearlas a mano.
+  const [porMapear, setPorMapear] = useState<{ analisis: Analisis; filas: any[][] } | null>(null);
   const { toast } = useToast();
 
   const nDuplicados = useMemo(() => buscarDuplicados(state.movimientos).length, [state.movimientos]);
@@ -87,72 +91,88 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
     toast(`Listo: ${nuevos.length} meses planificados hasta final de año.`, 'ok');
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  /** Vuelca un extracto ya leído: movimientos, categorías, nóminas ancla, periodos y saldo. */
+  const aplicarExtracto = (parsed: ParsedResultado) => {
+    const nuevasCats = Array.from(parsed.categoriasEncontradas).map(n => ({
+      id: n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-'),
+      nombre: n, color: getDeterministaColor(n), tipo: 'ambos' as const,
+    }));
+    const dictIds = new Set(state.categorias.map(c => c.id));
+    const finalCats = [...state.categorias, ...nuevasCats.filter(c => !dictIds.has(c.id))];
+    const dictMovs = new Set(state.movimientos.map(m => m.hash));
+    const nuevosMovs = parsed.movimientos
+      .filter(m => !dictMovs.has(m.hash))
+      .map(m => {
+        // Las filas que llegan sin clasificar heredan la categoría de conceptos
+        // parecidos ya registrados (el usuario siempre puede corregirla).
+        if (m.categoria !== 'sin-clasificar') return m;
+        const sugerida = sugerirCategoria(m.concepto, state.movimientos);
+        return sugerida ? { ...m, categoria: sugerida } : m;
+      });
+    const todoMovas = [...state.movimientos, ...nuevosMovs];
+
+    const ingresosRecurrentes = todoMovas.filter(m => m.importe > 0);
+    const nominasMapeo = new Map<string, typeof ingresosRecurrentes[0]>();
+    ingresosRecurrentes.forEach(ing => {
+      const m = ing.fecha.substring(0, 7);
+      if (!nominasMapeo.has(m) || nominasMapeo.get(m)!.importe < ing.importe) nominasMapeo.set(m, ing);
+    });
+    const nominasAncla = Array.from(nominasMapeo.values()).map(m => ({
+      id: m.id || uuidv4(), fecha: m.fecha, importe: m.importe, concepto: m.concepto, movimientoId: m.id,
+    })).sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+    const derivedMonths = derivarMeses(nominasAncla);
+    const baseMes = derivedMonths[0];
+    const nuevosFuturos = baseMes ? generarMesesFuturos(baseMes, mesesRestantesDelAnio(baseMes) || 12) : [];
+
+    const mapa = new Map();
+    (state.mesesPersonalizados || []).forEach(m => mapa.set(m.id, m));
+    nuevosFuturos.forEach(m => mapa.set(m.id, m));
+
+    updateState({
+      movimientos: todoMovas.sort((a, b) => b.fecha.localeCompare(a.fecha)),
+      categorias: finalCats,
+      nominasAncla,
+      mesesPersonalizados: Array.from(mapa.values()).sort((a, b) => b.inicio.localeCompare(a.inicio)),
+      cuenta: { ...state.cuenta, saldoActual: parsed.saldoActual || state.cuenta.saldoActual, fechaSaldo: parsed.fechaSaldo || state.cuenta.fechaSaldo },
+    });
+
+    if (derivedMonths.length > 0) setSelectedMesId(derivedMonths[0].id);
+    playSuccess();
+    toast(`Importados ${nuevosMovs.length} movimientos nuevos. Meses del resto del año planificados.`, 'ok');
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    try {
-      const reader = new FileReader();
-      reader.onload = async (evt) => {
-        try {
-          const parsed = await parseExcelData(evt.target?.result);
-          const nuevasCats = Array.from(parsed.categoriasEncontradas).map(n => ({
-            id: n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-'),
-            nombre: n, color: getDeterministaColor(n), tipo: 'ambos' as const,
-          }));
-          const dictIds = new Set(state.categorias.map(c => c.id));
-          const finalCats = [...state.categorias, ...nuevasCats.filter(c => !dictIds.has(c.id))];
-          const dictMovs = new Set(state.movimientos.map(m => m.hash));
-          const nuevosMovs = parsed.movimientos
-            .filter(m => !dictMovs.has(m.hash))
-            .map(m => {
-              // Las filas que llegan sin clasificar heredan la categoría de conceptos
-              // parecidos ya registrados (el usuario siempre puede corregirla).
-              if (m.categoria !== 'sin-clasificar') return m;
-              const sugerida = sugerirCategoria(m.concepto, state.movimientos);
-              return sugerida ? { ...m, categoria: sugerida } : m;
-            });
-          const todoMovas = [...state.movimientos, ...nuevosMovs];
-
-          const ingresosRecurrentes = todoMovas.filter(m => m.importe > 0);
-          const nominasMapeo = new Map<string, typeof ingresosRecurrentes[0]>();
-          ingresosRecurrentes.forEach(ing => {
-            const m = ing.fecha.substring(0, 7);
-            if (!nominasMapeo.has(m) || nominasMapeo.get(m)!.importe < ing.importe) nominasMapeo.set(m, ing);
-          });
-          const nominasAncla = Array.from(nominasMapeo.values()).map(m => ({
-            id: m.id || uuidv4(), fecha: m.fecha, importe: m.importe, concepto: m.concepto, movimientoId: m.id,
-          })).sort((a, b) => a.fecha.localeCompare(b.fecha));
-
-          const derivedMonths = derivarMeses(nominasAncla);
-          const baseMes = derivedMonths[0];
-          const nuevosFuturos = baseMes ? generarMesesFuturos(baseMes, mesesRestantesDelAnio(baseMes) || 12) : [];
-
-          const mapa = new Map();
-          (state.mesesPersonalizados || []).forEach(m => mapa.set(m.id, m));
-          nuevosFuturos.forEach(m => mapa.set(m.id, m));
-
-          updateState({
-            movimientos: todoMovas.sort((a, b) => b.fecha.localeCompare(a.fecha)),
-            categorias: finalCats,
-            nominasAncla,
-            mesesPersonalizados: Array.from(mapa.values()).sort((a, b) => b.inicio.localeCompare(a.inicio)),
-            cuenta: { ...state.cuenta, saldoActual: parsed.saldoActual || state.cuenta.saldoActual, fechaSaldo: parsed.fechaSaldo || state.cuenta.fechaSaldo },
-          });
-
-          if (derivedMonths.length > 0) setSelectedMesId(derivedMonths[0].id);
-          playSuccess();
-          toast(`Importados ${nuevosMovs.length} movimientos nuevos. Meses del resto del año planificados.`, 'ok');
-        } catch (err) {
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        aplicarExtracto(await parseExcelData(evt.target?.result));
+      } catch (err) {
+        if (err instanceof ErrorColumnas) {
+          // Columnas no reconocidas: que las diga el usuario en vez de rendirse.
+          setPorMapear({ analisis: err.analisis, filas: err.filas });
+        } else {
           playError();
-          toast((err as Error).message || 'No se pudo leer el Excel. ¿Es un extracto compatible?', 'error');
+          toast((err as Error).message || 'No se pudo leer el Excel.', 'error');
         }
-      };
-      reader.readAsBinaryString(file);
-    } catch (err) {
-      playError(); console.error(err);
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const confirmarMapeo = (mapeo: Mapeo) => {
+    if (!porMapear) return;
+    const parsed = adaptar(leerConMapeo(porMapear.filas, mapeo));
+    setPorMapear(null);
+    if (parsed.movimientos.length === 0) {
+      playError();
+      toast('Con esas columnas no sale ningún movimiento. Revisa cuál es la fecha.', 'error');
+      return;
     }
+    aplicarExtracto(parsed);
   };
 
   const handleDownloadPlantilla = async () => {
@@ -552,6 +572,13 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
       </div>
 
       <Novedades isOpen={novedadesOpen} onClose={() => setNovedadesOpen(false)} />
+
+      <MapeoColumnas
+        isOpen={!!porMapear}
+        analisis={porMapear?.analisis || null}
+        onCancel={() => setPorMapear(null)}
+        onConfirm={confirmarMapeo}
+      />
     </div>
   );
 }

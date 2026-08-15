@@ -5,31 +5,46 @@ import { Button } from '../components/ui/Button';
 import { ChevronLeft, Upload, Check, ShieldCheck, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
 import { conciliar, puedeSerElMismo, Conciliacion as Resultado } from '../lib/conciliacion/conciliacion';
-import { parseExcelData } from '../lib/excel/parser';
+import { parseExcelData, ErrorColumnas, adaptar } from '../lib/excel/parser';
+import { leerFilas } from '../lib/excel/parser';
+import { analizarHoja, leerConMapeo, Analisis, Mapeo } from '../lib/excel/columnas';
+import { MapeoColumnas } from '../components/ui/MapeoColumnas';
 import { parsePlantillaGastos } from '../lib/excel/plantilla';
 import { Movimiento, Categoria } from '../lib/storage/types';
 import { getDeterministaColor } from '../lib/colors';
 import { playSuccess, playError } from '../lib/audio/sounds';
 
-/** Lee un extracto de CaixaBank; si no lo es, lo intenta como plantilla de gastos. */
-async function leerExtracto(bs: any, categorias: Categoria[]): Promise<{ movimientos: Movimiento[]; nombres: Map<string, string> }> {
+export interface Lectura { movimientos: Movimiento[]; nombres: Map<string, string> }
+
+export const idDeCategoria = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+
+/**
+ * Lee el extracto venga del banco que venga. Si el lector genérico no reconoce las
+ * columnas prueba con la plantilla de gastos, y si tampoco, propaga el `ErrorColumnas`
+ * para que la pantalla ofrezca mapear las columnas a mano en vez de rendirse.
+ */
+export async function leerExtracto(bs: any, categorias: Categoria[]): Promise<Lectura> {
   const nombres = new Map<string, string>();
   try {
     const r = await parseExcelData(bs);
-    for (const n of r.categoriasEncontradas) {
-      nombres.set(n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-'), n);
-    }
+    for (const n of r.categoriasEncontradas) nombres.set(idDeCategoria(n), n);
     if (r.movimientos.length > 0) return { movimientos: r.movimientos, nombres };
-  } catch {
-    // No es un extracto de CaixaBank: probamos con la plantilla de gastos.
+    throw new Error('El archivo no tiene ningún movimiento.');
+  } catch (err) {
+    if (!(err instanceof ErrorColumnas)) throw err;
+    try {
+      // Sin hashes existentes: aquí queremos TODAS las filas, no solo las nuevas.
+      const p = await parsePlantillaGastos(bs, categorias, new Set<string>());
+      if (p.movimientos.length > 0) {
+        for (const c of p.nuevasCategorias) nombres.set(c.id, c.nombre);
+        return { movimientos: p.movimientos, nombres };
+      }
+    } catch {
+      // Tampoco es una plantilla. Su error no debe tapar al de columnas: lo que
+      // necesita el usuario es mapearlas a mano, no leer «falta la hoja Gastos».
+    }
+    throw err;
   }
-  // Sin hashes existentes: aquí queremos TODAS las filas, no solo las nuevas.
-  const p = await parsePlantillaGastos(bs, categorias, new Set<string>());
-  for (const c of p.nuevasCategorias) nombres.set(c.id, c.nombre);
-  if (p.movimientos.length === 0) {
-    throw new Error('No he encontrado movimientos. Sube el extracto del banco (.xlsx) o la plantilla de gastos rellenada.');
-  }
-  return { movimientos: p.movimientos, nombres };
 }
 
 export function Conciliacion({ onBack }: { onBack?: () => void }) {
@@ -40,6 +55,10 @@ export function Conciliacion({ onBack }: { onBack?: () => void }) {
   const [banco, setBanco] = useState<Movimiento[] | null>(null);
   const [nombresCat, setNombresCat] = useState<Map<string, string>>(new Map());
   const [cargando, setCargando] = useState(false);
+  // Archivo leído cuyas columnas no se han reconocido: se guarda para mapearlas a mano.
+  const [porMapear, setPorMapear] = useState<{ analisis: Analisis; filas: any[][] } | null>(null);
+  // Lo último leído, para poder rehacerlo con otras columnas si la detección se equivocó.
+  const [ultimo, setUltimo] = useState<{ analisis: Analisis; filas: any[][] } | null>(null);
   const [aBorrar, setABorrar] = useState<Set<string>>(new Set());
   const [aAnadir, setAAnadir] = useState<Set<string>>(new Set());
   const [verCasados, setVerCasados] = useState(false);
@@ -49,34 +68,67 @@ export function Conciliacion({ onBack }: { onBack?: () => void }) {
     [state.movimientos, banco]
   );
 
+  /** Deja el extracto listo y premarca lo que se puede añadir sin riesgo. */
+  const aplicarLectura = ({ movimientos, nombres }: Lectura) => {
+    const r = conciliar(state.movimientos, movimientos);
+    setBanco(movimientos);
+    setNombresCat(nombres);
+    // Lo que falta se marca solo: añadirlo es seguro y es el motivo de estar aquí.
+    // Salvo lo que se parece a algo que sobra: huele a la misma operación mal apuntada,
+    // y añadirla la duplicaría de verdad. Esa la decides tú.
+    // Lo que sobra tampoco se marca: borrar es irreversible.
+    setAAnadir(new Set(r.faltanEnApp.filter(m => !puedeSerElMismo(r, m)).map(m => m.id)));
+    setABorrar(new Set());
+    playSuccess();
+    toast(`${movimientos.length} líneas leídas del extracto.`, 'ok');
+  };
+
   const subir = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setCargando(true);
     const reader = new FileReader();
     reader.onload = async (evt) => {
+      const bs = evt.target?.result;
       try {
-        const { movimientos, nombres } = await leerExtracto(evt.target?.result, state.categorias);
-        const r = conciliar(state.movimientos, movimientos);
-        setBanco(movimientos);
-        setNombresCat(nombres);
-        // Lo que falta se marca solo: añadirlo es seguro y es el motivo de estar aquí.
-        // Salvo lo que también sobra por el mismo importe: eso huele a la misma operación
-        // con otra fecha, y añadirla la duplicaría de verdad. Esa la decides tú.
-        // Lo que sobra tampoco se marca: borrar es irreversible.
-        setAAnadir(new Set(r.faltanEnApp.filter(m => !puedeSerElMismo(r, m)).map(m => m.id)));
-        setABorrar(new Set());
-        playSuccess();
-        toast(`${movimientos.length} líneas leídas del extracto.`, 'ok');
+        aplicarLectura(await leerExtracto(bs, state.categorias));
+        // Guardamos el archivo crudo por si la detección acertó las columnas pero mal.
+        try {
+          const filas = await leerFilas(bs);
+          setUltimo({ analisis: analizarHoja(filas), filas });
+        } catch { /* si no se puede reanalizar, simplemente no se ofrece cambiarlas */ }
       } catch (err) {
-        playError();
-        toast((err as Error).message || 'No se pudo leer el archivo.', 'error');
+        if (err instanceof ErrorColumnas) {
+          // No se reconocen las columnas: en vez de rendirse, que las diga el usuario.
+          setPorMapear({ analisis: err.analisis, filas: err.filas });
+          setUltimo({ analisis: err.analisis, filas: err.filas });
+        } else {
+          playError();
+          toast((err as Error).message || 'No se pudo leer el archivo.', 'error');
+        }
       } finally {
         setCargando(false);
       }
     };
     reader.readAsBinaryString(file);
     if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const confirmarMapeo = (mapeo: Mapeo) => {
+    if (!porMapear) return;
+    const r = adaptar(leerConMapeo(porMapear.filas, mapeo));
+    // El mapeo elegido pasa a ser el de partida: si se reabre para retocar una columna,
+    // las demás siguen puestas.
+    setUltimo({ analisis: { ...porMapear.analisis, mapeo }, filas: porMapear.filas });
+    setPorMapear(null);
+    if (r.movimientos.length === 0) {
+      playError();
+      toast('Con esas columnas no sale ningún movimiento. Revisa cuál es la fecha.', 'error');
+      return;
+    }
+    const nombres = new Map<string, string>();
+    for (const n of r.categoriasEncontradas) nombres.set(idDeCategoria(n), n);
+    aplicarLectura({ movimientos: r.movimientos, nombres });
   };
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, id: string) => {
@@ -163,7 +215,8 @@ export function Conciliacion({ onBack }: { onBack?: () => void }) {
             </p>
             <p className="text-[11px] text-dim leading-relaxed">
               Comparo por importe y fecha, nunca por el texto: el banco no llama a las cosas como tú.
-              Vale el extracto de CaixaBank (.xlsx) o la plantilla de gastos rellenada.
+              Vale el extracto de cualquier banco (.xls/.xlsx) o la plantilla de gastos rellenada;
+              si no reconozco las columnas, te pregunto cuál es cada una.
             </p>
             <Button className="w-full py-6 rounded-2xl" onClick={() => inputRef.current?.click()} disabled={cargando}>
               <Upload className="mr-2" size={18} /> {cargando ? 'Leyendo…' : 'Subir extracto'}
@@ -200,9 +253,16 @@ export function Conciliacion({ onBack }: { onBack?: () => void }) {
                   </span>.
                 </p>
               )}
-              <button onClick={() => { setBanco(null); setAAnadir(new Set()); setABorrar(new Set()); }} className="text-[11px] font-bold text-accent">
-                Subir otro extracto
-              </button>
+              <div className="flex gap-4">
+                <button onClick={() => { setBanco(null); setUltimo(null); setAAnadir(new Set()); setABorrar(new Set()); }} className="text-[11px] font-bold text-accent">
+                  Subir otro extracto
+                </button>
+                {ultimo && (
+                  <button onClick={() => setPorMapear(ultimo)} className="text-[11px] font-bold text-muted hover:text-accent">
+                    He leído mal las columnas
+                  </button>
+                )}
+              </div>
             </div>
 
             {res.faltanEnApp.length === 0 && res.sobranEnApp.length === 0 && (
@@ -281,6 +341,13 @@ export function Conciliacion({ onBack }: { onBack?: () => void }) {
           </>
         )}
       </div>
+
+      <MapeoColumnas
+        isOpen={!!porMapear}
+        analisis={porMapear?.analisis || null}
+        onCancel={() => setPorMapear(null)}
+        onConfirm={confirmarMapeo}
+      />
     </div>
   );
 }

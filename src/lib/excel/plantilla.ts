@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Movimiento, Categoria } from '../storage/types';
 import { getDeterministaColor } from '../colors';
 import { parseNumberString } from './parser';
+import { parseFecha, normalizarTexto } from './valores';
 
 export interface ResultadoPlantilla {
   movimientos: Movimiento[];
@@ -12,47 +13,12 @@ export interface ResultadoPlantilla {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-function normalizar(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
-}
+// `parseFecha` y `normalizarTexto` viven en `valores.ts`: los comparte el lector genérico
+// de extractos, que tiene que entender los mismos formatos de fecha que la plantilla.
+const normalizar = normalizarTexto;
 
 function categoriaId(nombre: string): string {
   return nombre.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-}
-
-/** Acepta número de serie de Excel, Date, DD/MM/AAAA o AAAA-MM-DD. Devuelve '' si no es válida. */
-function parseFecha(val: any): string {
-  if (val === null || val === undefined || val === '') return '';
-  let y = 0, m = 0, d = 0;
-  const EPOCH_EXCEL = Date.UTC(1899, 11, 30);
-  // Redondeo al día más cercano: absorbe desfases de zona horaria en celdas de solo-fecha.
-  const desdeDias = (dias: number) => {
-    const dt = new Date(EPOCH_EXCEL + dias * 86400000);
-    y = dt.getUTCFullYear(); m = dt.getUTCMonth() + 1; d = dt.getUTCDate();
-  };
-  if (val instanceof Date) {
-    desdeDias(Math.round((val.getTime() - EPOCH_EXCEL) / 86400000));
-  } else if (typeof val === 'number') {
-    // Serial de Excel (epoch 1899-12-30). Solo aceptamos fechas >= 2000, fuera del bug de 1900.
-    if (!isFinite(val) || val < 25569) return '';
-    desdeDias(Math.round(val));
-  } else {
-    const s = String(val).trim();
-    let match = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (match) {
-      y = Number(match[1]); m = Number(match[2]); d = Number(match[3]);
-    } else {
-      match = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-      if (!match) return '';
-      d = Number(match[1]); m = Number(match[2]); y = Number(match[3]);
-      if (y < 100) y += 2000;
-    }
-  }
-  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return '';
-  // Validar que el día existe en el mes (evita 31/02, etc.)
-  const check = new Date(y, m - 1, d);
-  if (check.getMonth() !== m - 1) return '';
-  return `${y}-${pad(m)}-${pad(d)}`;
 }
 
 /** Genera y descarga la plantilla .xlsx con ejemplos e instrucciones. */

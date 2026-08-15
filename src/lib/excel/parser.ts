@@ -1,5 +1,5 @@
-import { v4 as uuidv4 } from 'uuid';
 import { Movimiento } from '../storage/types';
+import { analizarHoja, leerConMapeo, Analisis, ResultadoLectura } from './columnas';
 
 export interface ParsedResultado {
   banco: string;
@@ -7,14 +7,6 @@ export interface ParsedResultado {
   saldoActual: number;
   fechaSaldo: string; // YYYY-MM-DD local
   categoriasEncontradas: Set<string>;
-}
-
-function parseSpanishDate(dtStr: string): string {
-  const parts = dtStr.trim().split('/');
-  if (parts.length === 3) {
-    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-  }
-  return '';
 }
 
 export function parseNumberString(val: any): number {
@@ -36,103 +28,58 @@ export function parseNumberString(val: any): number {
   return parseFloat(str);
 }
 
-export async function parseExcelData(fileBase64OrBuffer: any): Promise<ParsedResultado> {
+/**
+ * Saca las filas en crudo de la hoja con más contenido del libro. Se queda con la mayor
+ * porque muchos bancos meten una hoja de portada o de instrucciones delante.
+ */
+export async function leerFilas(fileBase64OrBuffer: any): Promise<any[][]> {
   const XLSX = await import('xlsx');
-  
   const wb = XLSX.read(fileBase64OrBuffer, { type: 'binary' });
-  const sheetName = wb.SheetNames[0];
-  const sheet = wb.Sheets[sheetName];
-  
-  const rawData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, raw: false, defval: '' });
-  
-  let headerRowIndex = -1;
-  let headers: string[] = [];
 
-  for (let i = 0; i < Math.min(20, rawData.length); i++) {
-    const row = rawData[i];
-    if (!row) continue;
-    const hasFValor = row.some(cell => typeof cell === 'string' && cell.includes('F. VALOR'));
-    const hasDesc = row.some(cell => typeof cell === 'string' && cell.includes('DESCRIPCIÓN'));
-    const hasImporte = row.some(cell => typeof cell === 'string' && cell.includes('IMPORTE'));
-    
-    if (hasFValor && hasDesc && hasImporte) {
-      headerRowIndex = i;
-      headers = row;
-      break;
-    }
+  let mejor: any[][] = [];
+  for (const nombre of wb.SheetNames) {
+    const filas = XLSX.utils.sheet_to_json<any[]>(wb.Sheets[nombre], { header: 1, raw: false, defval: '' });
+    const conDatos = filas.filter(f => f && f.some(c => String(c).trim() !== '')).length;
+    const mejorConDatos = mejor.filter(f => f && f.some(c => String(c).trim() !== '')).length;
+    if (conDatos > mejorConDatos) mejor = filas;
   }
+  return mejor;
+}
 
-  if (headerRowIndex === -1) {
-    throw new Error('Formato no reconocido. Asegúrate de usar un extracto compatible que contenga las columnas F. VALOR, DESCRIPCIÓN e IMPORTE.');
+/**
+ * Error de un archivo que se ha leído pero cuyas columnas no se han podido identificar
+ * solas. Lleva el análisis dentro para que la pantalla ofrezca mapearlas a mano en vez
+ * de dejar al usuario en un callejón sin salida.
+ */
+export class ErrorColumnas extends Error {
+  constructor(public analisis: Analisis, public filas: any[][]) {
+    super('No he reconocido las columnas de este archivo.');
+    this.name = 'ErrorColumnas';
   }
+}
 
-  const idxFecha = headers.findIndex(h => typeof h === 'string' && h.includes('F. VALOR'));
-  const idxCat = headers.findIndex(h => typeof h === 'string' && h.includes('CATEGORÍA'));
-  const idxSub = headers.findIndex(h => typeof h === 'string' && h.includes('SUBCATEGORÍA'));
-  const idxDesc = headers.findIndex(h => typeof h === 'string' && h.includes('DESCRIPCIÓN'));
-  const idxImp = headers.findIndex(h => typeof h === 'string' && h.includes('IMPORTE'));
-  const idxSaldo = headers.findIndex(h => typeof h === 'string' && h.includes('SALDO'));
+/**
+ * Lee un extracto bancario de cualquier banco: detecta las columnas por sinónimos de
+ * cabecera y, si no las hay, por el contenido. Si aun así falta algo, lanza
+ * `ErrorColumnas` con lo analizado para que se pueda completar a mano.
+ */
+export async function parseExcelData(fileBase64OrBuffer: any): Promise<ParsedResultado> {
+  const filas = await leerFilas(fileBase64OrBuffer);
+  if (filas.length === 0) throw new Error('El archivo no tiene ninguna hoja con datos.');
 
-  const movimientos: Movimiento[] = [];
-  const categoriasEncontradas = new Set<string>();
-  
-  let saldoReciente = 0;
-  let fechaSaldo = '';
-  let saldoEncontrado = false;
+  const analisis = analizarHoja(filas);
+  if (!analisis.completo) throw new ErrorColumnas(analisis, filas);
 
-  for (let i = headerRowIndex + 1; i < rawData.length; i++) {
-    const row = rawData[i];
-    if (!row || row.length === 0) continue;
-    
-    let fechaRaw = row[idxFecha];
-    let catRaw = idxCat !== -1 ? row[idxCat] : 'Sin clasificar';
-    let subRaw = idxSub !== -1 ? row[idxSub] : '';
-    let descRaw = row[idxDesc];
-    let impRaw = row[idxImp];
-    let salRaw = idxSaldo !== -1 ? row[idxSaldo] : '';
-    
-    if (!fechaRaw || !descRaw || !impRaw) continue;
+  return adaptar(leerConMapeo(filas, analisis.mapeo));
+}
 
-    const importe = parseNumberString(impRaw);
-    if (isNaN(importe)) continue;
-    
-    const fecha = parseSpanishDate(String(fechaRaw));
-    if (!fecha) continue;
-
-    if (!saldoEncontrado && salRaw) {
-      const parsedSaldo = parseNumberString(salRaw);
-      if (!isNaN(parsedSaldo)) {
-        saldoReciente = parsedSaldo;
-        fechaSaldo = fecha;
-        saldoEncontrado = true;
-      }
-    }
-
-    const catName = String(catRaw).trim() || 'Sin clasificar';
-    const concepto = String(descRaw).trim();
-    
-    const catId = catName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-    categoriasEncontradas.add(catName);
-
-    const hash = `${fecha}|${importe.toFixed(2)}|${concepto.toLowerCase()}`;
-
-    movimientos.push({
-      id: uuidv4(),
-      fecha,
-      importe,
-      concepto,
-      categoria: catId,
-      subcategoria: String(subRaw).trim() || undefined,
-      fuente: 'import:caixabank',
-      hash
-    });
-  }
-
+/** Adapta la lectura genérica a la forma que ya esperaban el onboarding y los ajustes. */
+export function adaptar(r: ResultadoLectura): ParsedResultado {
   return {
     banco: 'Importado',
-    movimientos,
-    saldoActual: saldoReciente,
-    fechaSaldo,
-    categoriasEncontradas
+    movimientos: r.movimientos,
+    saldoActual: r.saldoActual,
+    fechaSaldo: r.fechaSaldo,
+    categoriasEncontradas: new Set(r.categoriasEncontradas.values()),
   };
 }

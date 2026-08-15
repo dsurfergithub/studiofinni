@@ -7,7 +7,7 @@ import { parseExcelData } from '../excel/parser';
 const MUESTRA = 'C:/Users/Duser/Downloads/movements-1582026.xls';
 
 describe.skipIf(!existsSync(MUESTRA))('extracto de ING', () => {
-  it('se lee con el mismo parser que el de CaixaBank: las cabeceras coinciden', async () => {
+  it('lo lee el lector genérico sin descartar ninguna fila', async () => {
     // 'binary' = latin1: es exactamente lo que entrega FileReader.readAsBinaryString
     // en el navegador, que es como llega el archivo en la app.
     const r = await parseExcelData(readFileSync(MUESTRA, 'binary'));
