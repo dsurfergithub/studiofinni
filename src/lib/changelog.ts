@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.2.0';
+export const APP_VERSION = '2.3.0';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.3.0',
+    fecha: '2026-08-15',
+    titulo: 'Buscar duplicados',
+    cambios: [
+      { tipo: 'nuevo', texto: 'Ajustes → Buscar duplicados: encuentra el mismo gasto apuntado dos veces, una a mano y otra al importar. El anti-duplicados de los imports no los veía porque el banco no llama al gasto como tú ("Alquiler" contra "Transferencias").' },
+      { tipo: 'nuevo', texto: '"Dejar solo uno" marca los sobrantes de un grupo y conserva el del banco, que es el que manda. Nada se borra sin que lo confirmes.' },
+      { tipo: 'mejora', texto: 'No marca falsos positivos: varios cobros del mismo importe y día venidos del mismo import son cobros distintos, no repeticiones.' },
+    ],
+  },
   {
     version: '2.2.0',
     fecha: '2026-08-15',

@@ -12,6 +12,7 @@ import { PlanAnual } from './screens/PlanAnual';
 import { Categorias } from './screens/Categorias';
 import { Ajustes } from './screens/Ajustes';
 import { Suscripciones } from './screens/Suscripciones';
+import { Duplicados } from './screens/Duplicados';
 
 // Insights carga recharts (pesado): lo diferimos para aligerar el arranque.
 const Insights = lazy(() => import('./screens/Insights').then(m => ({ default: m.Insights })));
@@ -56,6 +57,7 @@ function AppContent() {
         )}
         {currentTab === 'suscripciones' && <Suscripciones onBack={() => setCurrentTab('dashboard')} />}
         {currentTab === 'categorias' && <Categorias onBack={() => setCurrentTab('ajustes')} />}
+        {currentTab === 'duplicados' && <Duplicados onBack={() => setCurrentTab('ajustes')} />}
         {currentTab === 'ajustes' && <Ajustes onNavigate={setCurrentTab} />}
       </main>
       <BottomNav current={currentTab} onChange={setCurrentTab} />

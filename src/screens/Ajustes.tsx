@@ -1,10 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useStore } from '../lib/storage/store';
 import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import { Novedades } from '../components/ui/Novedades';
 import { APP_VERSION } from '../lib/changelog';
-import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone, Scale } from 'lucide-react';
+import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone, Scale, CopyCheck } from 'lucide-react';
 import { parseExcelData } from '../lib/excel/parser';
 import { descargarPlantillaGastos, parsePlantillaGastos } from '../lib/excel/plantilla';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { derivarMeses, generarMesesFuturos, mesesRestantesDelAnio, mesesParaCubrir, mesIdDeMovimiento } from '../lib/finmes/finmes';
 import { getBackups, createManualBackup, migrate } from '../lib/storage/storage';
 import { formatCurrency, getLocalFechaIso } from '../lib/utils';
+import { buscarDuplicados } from '../lib/duplicados/duplicados';
 
 /** Acepta lo que teclee el usuario: «614», «614,30», «1.234,56», «-382.45». */
 function parseImporte(texto: string): number | null {
@@ -38,6 +39,8 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
   const [novedadesOpen, setNovedadesOpen] = useState(false);
   const [saldoBanco, setSaldoBanco] = useState('');
   const { toast } = useToast();
+
+  const nDuplicados = useMemo(() => buscarDuplicados(state.movimientos).length, [state.movimientos]);
 
   const saldoApp = getSaldoCalculado();
   const saldoRealTecleado = parseImporte(saldoBanco);
@@ -444,6 +447,15 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
             <button onClick={() => onNavigate?.('categorias')} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
               <div className="flex items-center gap-3 text-sm font-bold"><Tag size={20} className="text-accent" /><span>Categorías</span></div>
               <ChevronRight size={18} className="text-muted" />
+            </button>
+            <button onClick={() => onNavigate?.('duplicados')} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
+              <div className="flex items-center gap-3 text-sm font-bold"><CopyCheck size={20} className="text-accent" /><span>Buscar duplicados</span></div>
+              <span className="flex items-center gap-2">
+                {nDuplicados > 0 && (
+                  <span className="text-[11px] font-bold text-warning bg-warning/15 px-2 py-0.5 rounded-full">{nDuplicados}</span>
+                )}
+                <ChevronRight size={18} className="text-muted" />
+              </span>
             </button>
             <button onClick={() => setNovedadesOpen(true)} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
               <div className="flex items-center gap-3 text-sm font-bold"><Megaphone size={20} className="text-accent" /><span>Novedades de la app</span></div>
