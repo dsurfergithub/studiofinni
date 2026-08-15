@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.3.0';
+export const APP_VERSION = '2.4.0';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.4.0',
+    fecha: '2026-08-15',
+    titulo: 'Comparar con el banco',
+    cambios: [
+      { tipo: 'nuevo', texto: 'Ajustes → Comparar con el banco: sube el extracto y te dice, línea a línea, qué cuadra, qué tienes apuntado de más y —lo importante— qué hay en el banco que no has apuntado. Una nómina que se te olvidó no la detectaba nada hasta ahora.' },
+      { tipo: 'nuevo', texto: 'Lo que falta se añade de un toque, con su categoría. Lo que sobra se borra solo si lo marcas tú.' },
+      { tipo: 'mejora', texto: 'Compara por importe y fecha, nunca por el texto: el banco no llama a las cosas como tú. Si un mismo importe sale en las dos listas, te avisa de que puede ser el mismo apunte con la fecha cambiada en vez de duplicarlo.' },
+      { tipo: 'mejora', texto: 'Vale tanto el extracto de CaixaBank como la plantilla de gastos rellenada.' },
+    ],
+  },
   {
     version: '2.3.0',
     fecha: '2026-08-15',

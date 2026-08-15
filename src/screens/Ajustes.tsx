@@ -4,7 +4,7 @@ import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import { Novedades } from '../components/ui/Novedades';
 import { APP_VERSION } from '../lib/changelog';
-import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone, Scale, CopyCheck } from 'lucide-react';
+import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone, Scale, CopyCheck, GitCompare } from 'lucide-react';
 import { parseExcelData } from '../lib/excel/parser';
 import { descargarPlantillaGastos, parsePlantillaGastos } from '../lib/excel/plantilla';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
@@ -446,6 +446,10 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
             </button>
             <button onClick={() => onNavigate?.('categorias')} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
               <div className="flex items-center gap-3 text-sm font-bold"><Tag size={20} className="text-accent" /><span>Categorías</span></div>
+              <ChevronRight size={18} className="text-muted" />
+            </button>
+            <button onClick={() => onNavigate?.('conciliacion')} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
+              <div className="flex items-center gap-3 text-sm font-bold"><GitCompare size={20} className="text-accent" /><span>Comparar con el banco</span></div>
               <ChevronRight size={18} className="text-muted" />
             </button>
             <button onClick={() => onNavigate?.('duplicados')} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">

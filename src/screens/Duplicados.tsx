@@ -45,7 +45,8 @@ export function Duplicados({ onBack }: { onBack?: () => void }) {
   const borrar = () => {
     const n = marcados.size;
     if (n === 0) return;
-    if (!window.confirm(`Se borrarán ${n} movimiento${n === 1 ? '' : 's'} (${formatCurrency(importeMarcado)}). No se puede deshacer. ¿Seguir?`)) return;
+    const frase = n === 1 ? 'Se borrará 1 movimiento' : `Se borrarán ${n} movimientos`;
+    if (!window.confirm(`${frase} (${formatCurrency(importeMarcado)}). No se puede deshacer. ¿Seguir?`)) return;
     deleteMovimientos([...marcados]);
     setMarcados(new Set());
     playSuccess();
