@@ -98,7 +98,27 @@ describe('conciliar', () => {
     expect(r.faltanEnApp.map(m => m.importe)).toContain(1813.12);
     expect(r.sobranEnApp.map(m => m.importe)).toContain(1813.12);
     expect(puedeSerElMismo(r, r.faltanEnApp.find(m => m.importe === 1813.12)!)).toBe(true);
+    expect(puedeSerElMismo(r, r.sobranEnApp[0])).toBe(true);
     expect(puedeSerElMismo(r, r.faltanEnApp.find(m => m.importe === -30)!)).toBe(false);
+  });
+
+  it('el aviso aguanta un céntimo de diferencia (caso real de la nómina)', () => {
+    // El banco pagó 1.813,11 el 31-jul; estaba apuntada como 1.813,12 el 1-ago. Nunca
+    // casan por importe exacto, pero es obviamente el mismo apunte.
+    const app = [mov('a', '2026-08-01', 1813.12, 'Nomina')];
+    const banco = [bank('b', '2026-07-31', 1813.11, 'NOMINA INDITEX'), bank('c', '2026-08-10', -30, 'OTRA')];
+    const r = conciliar(app, banco);
+    expect(puedeSerElMismo(r, r.faltanEnApp.find(m => m.importe === 1813.11)!)).toBe(true);
+    expect(puedeSerElMismo(r, r.sobranEnApp[0])).toBe(true);
+  });
+
+  it('pero no confunde dos apuntes iguales separados por meses', () => {
+    const app = [mov('a', '2026-06-01', -60, 'Cuota junio')];
+    const banco = [bank('b', '2026-08-01', -60, 'CUOTA AGOSTO'), bank('c', '2026-06-01', -5, 'OTRA')];
+    const r = conciliar(app, banco);
+    expect(r.faltanEnApp.some(m => m.importe === -60)).toBe(true);
+    expect(r.sobranEnApp.some(m => m.importe === -60)).toBe(true);
+    expect(puedeSerElMismo(r, r.faltanEnApp.find(m => m.importe === -60)!)).toBe(false);
   });
 
   it('sin extracto no dice nada', () => {

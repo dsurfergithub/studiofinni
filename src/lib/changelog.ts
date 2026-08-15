@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.5.0';
+export const APP_VERSION = '2.5.1';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.5.1',
+    fecha: '2026-08-15',
+    titulo: 'El aviso de "puede ser el mismo" aguanta un céntimo',
+    cambios: [
+      { tipo: 'mejora', texto: 'Al comparar con el banco, si un apunte que falta y otro que sobra se parecen —mismo importe o a un céntimo, y fechas cercanas— la app avisa de que puede ser el mismo mal apuntado, en vez de dejarte añadirlo duplicado. Antes solo lo veía si el importe coincidía al céntimo exacto.' },
+    ],
+  },
   {
     version: '2.5.0',
     fecha: '2026-08-15',

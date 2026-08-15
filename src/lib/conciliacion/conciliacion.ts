@@ -27,17 +27,22 @@ export interface Conciliacion {
   /** Lo que se moverá el saldo si aplicas todo: falta − sobra. */
   descuadre: number;
   /**
-   * Importes (con 2 decimales) que salen a la vez en `faltanEnApp` y en `sobranEnApp`.
-   * Casi siempre es lo MISMO apunte con la fecha equivocada, demasiado lejos para que la
-   * ventana lo case. Añadirlo sin más lo duplicaría de verdad, así que la pantalla avisa
-   * y no lo marca solo.
+   * Ids (de las dos listas) que tienen un candidato claro en la contraria: mismo importe
+   * o casi, y fechas cercanas. Casi siempre es el MISMO apunte con la fecha o el importe
+   * mal tecleados, demasiado lejos para que el emparejamiento exacto lo case. Añadirlo
+   * sin más lo duplicaría de verdad, así que la pantalla avisa y no lo marca solo.
    */
-  importesEnAmbos: Set<string>;
+  idsDudosos: Set<string>;
 }
 
-/** ¿Este movimiento puede ser el mismo que hay en la otra lista, con otra fecha? */
+/** Céntimos de margen para dar dos importes por «el mismo mal tecleado». */
+export const TOLERANCIA_IMPORTE = 0.05;
+/** Días de margen para lo mismo, más ancho que la ventana de emparejar. */
+export const VENTANA_DUDOSOS = 10;
+
+/** ¿Este movimiento puede ser el mismo que hay en la otra lista, mal apuntado? */
 export function puedeSerElMismo(r: Conciliacion, m: Movimiento): boolean {
-  return r.importesEnAmbos.has(m.importe.toFixed(2));
+  return r.idsDudosos.has(m.id);
 }
 
 function diasEntre(a: string, b: string): number {
@@ -68,7 +73,7 @@ const suma = (movs: Movimiento[]) => movs.reduce((s, m) => s + m.importe, 0);
  */
 export function conciliar(app: Movimiento[], banco: Movimiento[], ventanaDias = VENTANA_DIAS): Conciliacion {
   if (banco.length === 0) {
-    return { desde: '', hasta: '', casados: [], sobranEnApp: [], faltanEnApp: [], totalSobra: 0, totalFalta: 0, descuadre: 0, importesEnAmbos: new Set() };
+    return { desde: '', hasta: '', casados: [], sobranEnApp: [], faltanEnApp: [], totalSobra: 0, totalFalta: 0, descuadre: 0, idsDudosos: new Set() };
   }
 
   const fechas = banco.map(m => m.fecha);
@@ -125,10 +130,18 @@ export function conciliar(app: Movimiento[], banco: Movimiento[], ventanaDias = 
   const totalSobra = suma(sobranEnApp);
   const totalFalta = suma(faltanEnApp);
 
-  const importesSobran = new Set(sobranEnApp.map(m => m.importe.toFixed(2)));
-  const importesEnAmbos = new Set(
-    faltanEnApp.map(m => m.importe.toFixed(2)).filter(k => importesSobran.has(k))
-  );
+  // Un apunte que quedó suelto en cada lista, con el mismo importe (o a un céntimo) y
+  // fechas cercanas, casi siempre es el mismo mal tecleado. Caso real: la nómina que el
+  // banco pagó el 31-jul por 1.813,11 € y estaba apuntada el 1-ago por 1.813,12 €.
+  const idsDudosos = new Set<string>();
+  for (const falta of faltanEnApp) {
+    for (const sobra of sobranEnApp) {
+      if (Math.abs(falta.importe - sobra.importe) > TOLERANCIA_IMPORTE) continue;
+      if (diasEntre(falta.fecha, sobra.fecha) > VENTANA_DUDOSOS) continue;
+      idsDudosos.add(falta.id);
+      idsDudosos.add(sobra.id);
+    }
+  }
 
-  return { desde, hasta, casados, sobranEnApp, faltanEnApp, totalSobra, totalFalta, descuadre: totalFalta - totalSobra, importesEnAmbos };
+  return { desde, hasta, casados, sobranEnApp, faltanEnApp, totalSobra, totalFalta, descuadre: totalFalta - totalSobra, idsDudosos };
 }

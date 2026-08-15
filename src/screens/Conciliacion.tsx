@@ -130,7 +130,7 @@ export function Conciliacion({ onBack }: { onBack?: () => void }) {
         <span className="block text-[11px] font-mono text-muted">{m.fecha}</span>
         {dudoso && (
           <span className="block text-[11px] text-warning mt-0.5">
-            Este importe está en las dos listas: puede ser el mismo con la fecha cambiada
+            Hay uno casi igual en la otra lista: puede ser el mismo con la fecha o el importe mal
           </span>
         )}
       </span>
