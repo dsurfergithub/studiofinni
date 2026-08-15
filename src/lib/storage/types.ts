@@ -69,6 +69,20 @@ export interface MesFinanciero {
   esEstimado?: boolean;
 }
 
+/**
+ * Cierre de un periodo: el saldo real del banco el día que acabó. Se guarda aparte de
+ * `MesFinanciero` porque los meses derivados de nóminas se recalculan en cada render y
+ * el cierre no puede depender de eso.
+ */
+export interface CierreMes {
+  mesId: string;
+  /** Saldo real de la cuenta al cierre del último día del periodo. */
+  saldoFinal: number;
+  /** Fecha a la que corresponde el saldo (el `fin` del periodo). */
+  fecha: string; // YYYY-MM-DD
+  cerradoEn: number; // timestamp
+}
+
 export interface SavingsMeta {
   id: string;
   nombre: string;
@@ -102,6 +116,8 @@ export interface AppState {
   suscripciones: Suscripcion[];
   nominasAncla: NominaAncla[];
   mesesPersonalizados: MesFinanciero[];
+  /** Periodos ya cerrados, por id de mes. Un mes cerrado tiene saldo final conocido. */
+  cierres: Record<string, CierreMes>;
   // Presupuesto base por categoría (se aplica a todos los meses salvo override).
   budgetTemplate: Record<string, number>;
   // Presupuesto específico por mes: { [mesId]: { [catId]: importe } }

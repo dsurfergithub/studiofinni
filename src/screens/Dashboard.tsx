@@ -6,6 +6,7 @@ import { MovimientoEditor } from '../components/ui/MovimientoEditor';
 import { totalMensual } from '../lib/suscripciones/suscripciones';
 import { movimientoEnMes } from '../lib/finmes/finmes';
 import { esAjusteDeSaldo } from '../lib/saldo/cuadre';
+import { CierreMesCard } from '../components/ui/CierreMesCard';
 import { ArrowDownLeft, ArrowUpRight, Repeat, ChevronRight } from 'lucide-react';
 
 interface DashboardProps {
@@ -87,6 +88,9 @@ export function Dashboard({ selectedMesId, onChangeMes, onNavigate }: DashboardP
             {formatCurrencyBig(saldo)}
           </h1>
         </section>
+
+        {/* Cierre de mes: aviso de periodos terminados y saldo inicial del que se ve */}
+        <CierreMesCard mesActual={currentMes} />
 
         {/* Accesos rápidos +Gasto / +Ingreso */}
         <div className="grid grid-cols-2 gap-3">

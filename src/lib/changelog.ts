@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.4.0';
+export const APP_VERSION = '2.5.0';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.5.0',
+    fecha: '2026-08-15',
+    titulo: 'Cerrar mes',
+    cambios: [
+      { tipo: 'nuevo', texto: 'Cuando un periodo termina, el Dashboard te ofrece cerrarlo: escribes el saldo que tenías su último día y ese pasa a ser su saldo final de verdad.' },
+      { tipo: 'nuevo', texto: 'El periodo siguiente arranca mostrando «empezaste el periodo con…». Ya no se arrastran los errores de un mes al otro: cada uno parte de una cifra confirmada con el banco.' },
+      { tipo: 'nuevo', texto: 'Un mes cerrado se puede reabrir cuando quieras; el saldo confirmado no se pierde.' },
+      { tipo: 'arreglo', texto: 'Los ajustes de saldo ya nunca suman al saldo. Antes, al cerrar un mes anterior, un ajuste viejo podía quedar por delante del ancla y aplicar su corrección por segunda vez.' },
+    ],
+  },
   {
     version: '2.4.0',
     fecha: '2026-08-15',

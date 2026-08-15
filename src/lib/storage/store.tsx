@@ -5,6 +5,7 @@ import { derivarMeses } from '../finmes/finmes';
 import { generarCargosSuscripciones } from '../suscripciones/suscripciones';
 import { getLocalFechaIso } from '../utils';
 import { calcularSaldo, prepararCuadre, CATEGORIA_AJUSTE, Cuadre } from '../saldo/cuadre';
+import { prepararCierre, Cierre } from '../cierre/cierre';
 import { v4 as uuidv4 } from 'uuid';
 
 export type PlanAmbito = 'plan' | 'escenario';
@@ -46,6 +47,8 @@ interface StoreContextType {
   removeMesPersonalizado: (id: string) => void;
   getSaldoCalculado: () => number;
   cuadrarConBanco: (saldoReal: number) => Cuadre;
+  cerrarMes: (mes: MesFinanciero, saldoFinal: number) => Cierre;
+  reabrirMes: (mesId: string) => void;
   selectedMesId: string;
   setSelectedMesId: (id: string) => void;
 }
@@ -413,6 +416,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return cuadre;
   };
 
+  /**
+   * Cierra un periodo: fija su saldo final real y reancla la cuenta a su último día,
+   * de modo que el siguiente arranca con un saldo inicial conocido. Escritura única.
+   */
+  const cerrarMes = (mes: MesFinanciero, saldoFinal: number): Cierre => {
+    const cierre = prepararCierre(state, mes, saldoFinal, uuidv4());
+    setState((prev) => ({
+      ...prev,
+      cuenta: cierre.cuenta,
+      cierres: { ...prev.cierres, [mes.id]: cierre.registro },
+      categorias: cierre.necesitaCategoria ? [...prev.categorias, CATEGORIA_AJUSTE] : prev.categorias,
+      movimientos: cierre.movimiento
+        ? [cierre.movimiento, ...prev.movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id))
+        : prev.movimientos,
+    }));
+    return cierre;
+  };
+
+  /**
+   * Reabre un periodo cerrado. Solo quita el cierre: ni el ancla ni el movimiento de
+   * ajuste se tocan, porque el saldo que se confirmó con el banco sigue siendo cierto.
+   */
+  const reabrirMes = (mesId: string) => {
+    setState((prev) => {
+      const cierres = { ...prev.cierres };
+      delete cierres[mesId];
+      return { ...prev, cierres };
+    });
+  };
+
   if (!initDone) return null;
 
   return (
@@ -449,6 +482,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         removeMesPersonalizado,
         getSaldoCalculado,
         cuadrarConBanco,
+        cerrarMes,
+        reabrirMes,
         selectedMesId,
         setSelectedMesId,
       }}

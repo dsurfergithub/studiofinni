@@ -11,7 +11,8 @@ describe('migrate', () => {
       savingsAcumulado: 100,
     };
     const s = migrate(legacy);
-    expect(s.schemaVersion).toBe(4);
+    expect(s.schemaVersion).toBe(5);
+    expect(s.cierres).toEqual({});
     expect(s.movimientos[0].enPresupuesto).toBe(true);
     expect(s.theme).toBe('dark');
     expect(s.hasOnboarded).toBe(true);
@@ -35,7 +36,7 @@ describe('migrate', () => {
       },
     };
     const s = migrate(v3);
-    expect(s.schemaVersion).toBe(4);
+    expect(s.schemaVersion).toBe(5);
     const enero = s.planAnual.datos['2026'][0];
     expect(enero.sueldo).toBe(2000);
     expect(enero.grupos.fijos).toBe(800);
@@ -44,10 +45,24 @@ describe('migrate', () => {
     expect(enero.grupos['grp-custom']).toBeUndefined();
   });
 
+  it('v4→v5: estrena los cierres de mes vacíos, sin inventar saldos hacia atrás', () => {
+    const s = migrate({ schemaVersion: 4, movimientos: [], mesesPersonalizados: [{ id: 'm-jul', nombre: 'Julio', clave: '2026-07', inicio: '2026-07-01', fin: '2026-07-31' }] });
+    expect(s.schemaVersion).toBe(5);
+    expect(s.cierres).toEqual({});
+    expect(s.mesesPersonalizados).toHaveLength(1);
+  });
+
+  it('conserva los cierres que ya existían', () => {
+    const cierre = { mesId: 'm-jul', saldoFinal: 742.5, fecha: '2026-07-31', cerradoEn: 123 };
+    const s = migrate({ schemaVersion: 5, movimientos: [], cierres: { 'm-jul': cierre } });
+    expect(s.cierres['m-jul']).toEqual(cierre);
+  });
+
   it('no revienta con un objeto vacío', () => {
     const s = migrate({});
-    expect(s.schemaVersion).toBe(4);
+    expect(s.schemaVersion).toBe(5);
     expect(Array.isArray(s.movimientos)).toBe(true);
+    expect(s.cierres).toEqual({});
     expect(s.planAnual.escenario).toEqual({});
   });
 });

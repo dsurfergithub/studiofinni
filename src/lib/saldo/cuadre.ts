@@ -31,11 +31,17 @@ type Cuenta = AppState['cuenta'];
  * que se ha movido después. Convenio: `saldoActual` es el saldo al CIERRE de
  * `fechaSaldo`, así que los movimientos de ese mismo día ya están dentro y solo
  * cuentan los estrictamente posteriores.
+ *
+ * Los ajustes NUNCA suman: el ancla ya lleva la verdad y el ajuste es solo el recibo
+ * de la corrección. Si contaran, bastaría con mover el ancla hacia atrás —cerrar un
+ * mes anterior— para que un ajuste viejo quedase por delante de ella y aplicara su
+ * corrección por segunda vez.
  */
 export function calcularSaldo(cuenta: Cuenta, movimientos: Movimiento[]): number {
-  if (!cuenta.fechaSaldo && movimientos.length === 0) return 0;
-  if (!cuenta.fechaSaldo) return movimientos.reduce((acc, m) => acc + m.importe, 0);
-  const delta = movimientos
+  const reales = movimientos.filter(m => !esAjusteDeSaldo(m));
+  if (!cuenta.fechaSaldo && reales.length === 0) return 0;
+  if (!cuenta.fechaSaldo) return reales.reduce((acc, m) => acc + m.importe, 0);
+  const delta = reales
     .filter(m => m.fecha > cuenta.fechaSaldo)
     .reduce((sum, m) => sum + m.importe, 0);
   return cuenta.saldoActual + delta;

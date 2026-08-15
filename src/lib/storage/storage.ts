@@ -3,7 +3,7 @@ import { PLAN_COLUMNAS } from '../plan/plan';
 
 const STORAGE_KEY = 'finni_v2';
 const BACKUP_KEY = 'finni_backups';
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_BACKUPS = 4;
 
@@ -21,6 +21,7 @@ export function getInitialState(): AppState {
     suscripciones: [],
     nominasAncla: [],
     mesesPersonalizados: [],
+    cierres: {},
     budgetTemplate: {},
     budgetOverrides: {},
     savingsGoal: 0,
@@ -106,7 +107,16 @@ export function migrate(state: any): AppState {
     s.schemaVersion = 4;
   }
 
+  // --- Migración a schema v5: cierres de mes ---
+  if (s.schemaVersion < 5) {
+    // Nadie tenía periodos cerrados antes de esto: se empieza de cero, sin inventar
+    // saldos finales que no podemos conocer hacia atrás.
+    if (!s.cierres || typeof s.cierres !== 'object') s.cierres = {};
+    s.schemaVersion = 5;
+  }
+
   // Defensa adicional por si vienen campos sueltos.
+  if (!s.cierres || typeof s.cierres !== 'object') s.cierres = {};
   if (!Array.isArray(s.suscripciones)) s.suscripciones = [];
   if (s.theme !== 'light' && s.theme !== 'dark') s.theme = 'dark';
   if (!s.planAnual || typeof s.planAnual !== 'object') s.planAnual = defaultPlanAnual();
