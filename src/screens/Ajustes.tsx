@@ -4,7 +4,7 @@ import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import { Novedades } from '../components/ui/Novedades';
 import { APP_VERSION } from '../lib/changelog';
-import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone } from 'lucide-react';
+import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone, Scale } from 'lucide-react';
 import { parseExcelData } from '../lib/excel/parser';
 import { descargarPlantillaGastos, parsePlantillaGastos } from '../lib/excel/plantilla';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
@@ -14,16 +14,51 @@ import { movimientosACsv } from '../lib/export/csv';
 import { v4 as uuidv4 } from 'uuid';
 import { derivarMeses, generarMesesFuturos, mesesRestantesDelAnio, mesesParaCubrir, mesIdDeMovimiento } from '../lib/finmes/finmes';
 import { getBackups, createManualBackup, migrate } from '../lib/storage/storage';
+import { formatCurrency, getLocalFechaIso } from '../lib/utils';
+
+/** Acepta lo que teclee el usuario: «614», «614,30», «1.234,56», «-382.45». */
+function parseImporte(texto: string): number | null {
+  const limpio = texto.trim().replace(/[€\s]/g, '');
+  if (!limpio) return null;
+  // Si hay coma, manda como decimal y los puntos son separador de miles.
+  const normalizado = limpio.includes(',')
+    ? limpio.replace(/\./g, '').replace(',', '.')
+    : limpio;
+  const n = Number(normalizado);
+  return Number.isFinite(n) ? n : null;
+}
 
 export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const plantillaInputRef = useRef<HTMLInputElement>(null);
-  const { resetState, updateState, importState, state, getMesesActivos, setSelectedMesId, theme, toggleTheme } = useStore();
+  const { resetState, updateState, importState, state, getMesesActivos, setSelectedMesId, theme, toggleTheme, getSaldoCalculado, cuadrarConBanco } = useStore();
   const [audioEnabled, setAudioEnabled] = useState(soundsEnabled());
   const [backups, setBackups] = useState(getBackups());
   const [novedadesOpen, setNovedadesOpen] = useState(false);
+  const [saldoBanco, setSaldoBanco] = useState('');
   const { toast } = useToast();
+
+  const saldoApp = getSaldoCalculado();
+  const saldoRealTecleado = parseImporte(saldoBanco);
+  const diferencia = saldoRealTecleado === null ? null : Number((saldoRealTecleado - saldoApp).toFixed(2));
+
+  const handleCuadrar = () => {
+    if (saldoRealTecleado === null) {
+      playError();
+      toast('Escribe el saldo que te da el banco (p. ej. 614,30).', 'error');
+      return;
+    }
+    const cuadre = cuadrarConBanco(saldoRealTecleado);
+    setSaldoBanco('');
+    playSuccess();
+    if (cuadre.diferencia === 0) {
+      toast('Ya cuadraba. Saldo confirmado a día de hoy.', 'ok');
+    } else {
+      const signo = cuadre.diferencia > 0 ? 'faltaban' : 'sobraban';
+      toast(`Saldo cuadrado en ${formatCurrency(cuadre.saldoReal)}. Se ha apuntado un ajuste: ${signo} ${formatCurrency(Math.abs(cuadre.diferencia))}.`, 'ok');
+    }
+  };
 
   const handleToggleAudio = () => {
     const next = !audioEnabled;
@@ -295,6 +330,79 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
       </div>
 
       <div className="p-4 space-y-8 mt-2">
+        {/* Cuadrar con el banco */}
+        <section className="space-y-3">
+          <h3 className="text-xs font-bold text-muted uppercase tracking-wider pl-1">Saldo</h3>
+          <div className="bg-surface border border-border rounded-2xl p-4 space-y-4">
+            <div className="flex items-start gap-3">
+              <Scale size={20} className="text-accent flex-shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <p className="font-bold text-text text-sm">Cuadrar con el banco</p>
+                <p className="text-muted mt-1 leading-relaxed">
+                  El saldo de la app arranca del último extracto y va sumando todo lo que apuntas:
+                  si algo se cuela dos veces o falta un ingreso, el error se queda para siempre.
+                  Escribe aquí el saldo real y vuelve a cero.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-baseline text-xs px-1">
+              <span className="text-muted">Saldo que calcula la app</span>
+              <span className="font-mono font-bold text-text">{formatCurrency(saldoApp)}</span>
+            </div>
+            <div className="flex justify-between items-baseline text-xs px-1 -mt-2">
+              <span className="text-muted">Anclado al</span>
+              <span className="font-mono text-muted">
+                {state.cuenta.fechaSaldo
+                  ? new Date(`${state.cuenta.fechaSaldo}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+                  : 'sin ancla'}
+              </span>
+            </div>
+
+            <label className="block space-y-2">
+              <span className="text-xs font-bold text-muted uppercase tracking-wider">Saldo real del banco hoy</span>
+              {/* text-base = 16px: por debajo, iOS Safari hace zoom al enfocar el input. */}
+              <input
+                type="text"
+                inputMode="decimal"
+                value={saldoBanco}
+                onChange={e => setSaldoBanco(e.target.value)}
+                placeholder="614,30"
+                className="w-full bg-surface-elevated border border-border rounded-xl px-4 py-3 text-base font-mono text-text placeholder:text-dim focus:outline-none focus:border-accent"
+              />
+            </label>
+
+            {diferencia !== null && (
+              <div className={`rounded-xl px-4 py-3 text-xs ${diferencia === 0 ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
+                {diferencia === 0 ? (
+                  <span className="font-bold">Ya cuadra. No hace falta ajuste.</span>
+                ) : (
+                  <>
+                    <span className="font-bold">
+                      Se apuntará un ajuste de {diferencia > 0 ? '+' : '−'}{formatCurrency(Math.abs(diferencia))}
+                    </span>
+                    <span className="block mt-1 opacity-80">
+                      {diferencia > 0
+                        ? 'A la app le faltaba dinero: ingresos sin apuntar o gastos contados de más.'
+                        : 'La app tenía dinero de más: gastos sin apuntar o ingresos duplicados.'}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+
+            {state.movimientos.some(m => m.fecha > getLocalFechaIso()) && (
+              <p className="text-[11px] text-muted px-1">
+                Ojo: tienes movimientos con fecha futura. Seguirán sumando al saldo por encima de esta cifra.
+              </p>
+            )}
+
+            <Button className="w-full py-6 rounded-2xl" onClick={handleCuadrar} disabled={saldoRealTecleado === null}>
+              <Scale className="mr-2" size={18} /> Cuadrar saldo
+            </Button>
+          </div>
+        </section>
+
         {/* Preferencias */}
         <section className="space-y-3">
           <h3 className="text-xs font-bold text-muted uppercase tracking-wider pl-1">Preferencias</h3>

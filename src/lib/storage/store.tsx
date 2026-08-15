@@ -4,6 +4,8 @@ import { loadState, saveState, getInitialState, maybeWeeklyBackup } from './stor
 import { derivarMeses } from '../finmes/finmes';
 import { generarCargosSuscripciones } from '../suscripciones/suscripciones';
 import { getLocalFechaIso } from '../utils';
+import { calcularSaldo, prepararCuadre, CATEGORIA_AJUSTE, Cuadre } from '../saldo/cuadre';
+import { v4 as uuidv4 } from 'uuid';
 
 export type PlanAmbito = 'plan' | 'escenario';
 
@@ -43,6 +45,7 @@ interface StoreContextType {
   setMesPersonalizado: (mes: MesFinanciero) => void;
   removeMesPersonalizado: (id: string) => void;
   getSaldoCalculado: () => number;
+  cuadrarConBanco: (saldoReal: number) => Cuadre;
   selectedMesId: string;
   setSelectedMesId: (id: string) => void;
 }
@@ -390,14 +393,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const getSaldoCalculado = () => {
-    if (!state.cuenta.fechaSaldo && state.movimientos.length === 0) return 0;
-    if (!state.cuenta.fechaSaldo) {
-      return state.movimientos.reduce((acc, current) => acc + current.importe, 0);
-    }
-    const recientes = state.movimientos.filter(m => m.fecha > state.cuenta.fechaSaldo);
-    const delta = recientes.reduce((sum, m) => sum + m.importe, 0);
-    return state.cuenta.saldoActual + delta;
+  const getSaldoCalculado = () => calcularSaldo(state.cuenta, state.movimientos);
+
+  /**
+   * Cuadra la app con el banco: reancla el saldo a `hoy` con la cifra real y apunta
+   * un movimiento de ajuste por la diferencia. Todo en una sola escritura para que
+   * el saldo nunca quede a medias entre el ancla vieja y el ajuste nuevo.
+   */
+  const cuadrarConBanco = (saldoReal: number): Cuadre => {
+    const cuadre = prepararCuadre(state, saldoReal, getLocalFechaIso(), uuidv4());
+    setState((prev) => ({
+      ...prev,
+      cuenta: cuadre.cuenta,
+      categorias: cuadre.necesitaCategoria ? [...prev.categorias, CATEGORIA_AJUSTE] : prev.categorias,
+      movimientos: cuadre.movimiento
+        ? [cuadre.movimiento, ...prev.movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id.localeCompare(a.id))
+        : prev.movimientos,
+    }));
+    return cuadre;
   };
 
   if (!initDone) return null;
@@ -435,6 +448,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setMesPersonalizado,
         removeMesPersonalizado,
         getSaldoCalculado,
+        cuadrarConBanco,
         selectedMesId,
         setSelectedMesId,
       }}

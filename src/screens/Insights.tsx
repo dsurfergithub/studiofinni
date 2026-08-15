@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { formatCurrency } from '../lib/utils';
 import { FinMesSelector } from '../components/ui/FinMesSelector';
 import { movimientoEnMes } from '../lib/finmes/finmes';
+import { esAjusteDeSaldo } from '../lib/saldo/cuadre';
 import { ChevronLeft } from 'lucide-react';
 
 interface InsightsProps {
@@ -23,7 +24,8 @@ export function Insights({ selectedMesId, onChangeMes }: InsightsProps) {
 
   const movsMes = useMemo(() => {
     if (!cMes) return [];
-    return state.movimientos.filter(m => movimientoEnMes(m, cMes, activeMeses));
+    // Sin ajustes de cuadre: corrigen el saldo, no son gasto ni ingreso analizable.
+    return state.movimientos.filter(m => movimientoEnMes(m, cMes, activeMeses) && !esAjusteDeSaldo(m));
   }, [state.movimientos, cMes, activeMeses]);
 
   // Cashflow
@@ -70,7 +72,7 @@ export function Insights({ selectedMesId, onChangeMes }: InsightsProps) {
     const mesActual = new Date().getMonth(); // 0-based
     const totales = new Array(12).fill(0);
     state.movimientos.forEach(m => {
-      if (m.importe < 0 && m.fecha.startsWith(String(year))) {
+      if (m.importe < 0 && !esAjusteDeSaldo(m) && m.fecha.startsWith(String(year))) {
         const mesIdx = parseInt(m.fecha.slice(5, 7), 10) - 1;
         totales[mesIdx] += Math.abs(m.importe);
       }

@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.1.0';
+export const APP_VERSION = '2.2.0';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.2.0',
+    fecha: '2026-08-15',
+    titulo: 'Cuadrar con el banco',
+    cambios: [
+      { tipo: 'nuevo', texto: 'Ajustes → Cuadrar con el banco: escribe el saldo real de tu cuenta y la app vuelve a la verdad. Antes el saldo arrastraba para siempre cualquier error (un movimiento contado dos veces, un ingreso sin apuntar) desde el último extracto importado.' },
+      { tipo: 'nuevo', texto: 'Cada cuadre deja un movimiento "Ajuste de saldo" con la diferencia, para que puedas ver cuándo y por cuánto se corrigió.' },
+      { tipo: 'mejora', texto: 'Los ajustes de saldo no cuentan como ingreso ni como gasto del mes: no ensucian el Dashboard, los Insights ni el presupuesto.' },
+    ],
+  },
   {
     version: '2.1.0',
     fecha: '2026-07-03',

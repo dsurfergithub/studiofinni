@@ -5,6 +5,7 @@ import { formatCurrency, getLocalFechaIso } from '../lib/utils';
 import { MovimientoEditor } from '../components/ui/MovimientoEditor';
 import { totalMensual } from '../lib/suscripciones/suscripciones';
 import { movimientoEnMes } from '../lib/finmes/finmes';
+import { esAjusteDeSaldo } from '../lib/saldo/cuadre';
 import { ArrowDownLeft, ArrowUpRight, Repeat, ChevronRight } from 'lucide-react';
 
 interface DashboardProps {
@@ -29,7 +30,8 @@ export function Dashboard({ selectedMesId, onChangeMes, onNavigate }: DashboardP
   const gastosPorCategoria: Record<string, number> = {};
 
   if (currentMes) {
-    const movsMes = state.movimientos.filter(m => movimientoEnMes(m, currentMes, meses));
+    // Los ajustes de cuadre se excluyen: corrigen el saldo, no son gasto ni ingreso del mes.
+    const movsMes = state.movimientos.filter(m => movimientoEnMes(m, currentMes, meses) && !esAjusteDeSaldo(m));
     movsMes.forEach(m => {
       if (m.importe > 0) ingresos += m.importe;
       else {
