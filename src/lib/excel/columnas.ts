@@ -1,9 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Movimiento } from '../storage/types';
-import { parseNumberString } from './parser';
-import { parseFecha, esFecha, normalizarTexto } from './valores';
+import { parseFecha, esFecha, normalizarTexto, parseNumberString } from './valores';
 
-export type Campo = 'fecha' | 'concepto' | 'importe' | 'debito' | 'credito' | 'saldo' | 'categoria' | 'subcategoria';
+export type Campo =
+  | 'fecha' | 'concepto' | 'importe' | 'debito' | 'credito'
+  | 'saldo' | 'categoria' | 'subcategoria' | 'tipo' | 'notas';
 
 /**
  * Sinónimos de cabecera por campo. El orden del objeto ES el orden de prioridad al
@@ -19,10 +20,13 @@ const SINONIMOS: Record<Campo, string[]> = {
   debito: ['CARGO', 'DEBE', 'DEBITO', 'DEBIT', 'SALIDA', 'PAGOS'],
   credito: ['ABONO', 'HABER', 'CREDITO', 'CREDIT', 'ENTRADA', 'COBROS'],
   importe: ['IMPORTE', 'CANTIDAD', 'AMOUNT', 'MOVIMIENTO EUR', 'EUROS'],
+  // 'TIPO' va antes que 'concepto' para que no se lo lleve «TIPO DE MOVIMIENTO».
+  tipo: ['TIPO', 'GASTO/INGRESO', 'SIGNO'],
+  notas: ['NOTAS', 'COMENTARIO', 'NOTES', 'ANOTACIONES'],
   concepto: ['CONCEPTO', 'DESCRIPCION', 'DESCRIPTION', 'DETALLE', 'MOVIMIENTO', 'REFERENCIA', 'BENEFICIARIO', 'TEXTO', 'OBSERVACIONES'],
 };
 
-const ORDEN: Campo[] = ['subcategoria', 'categoria', 'fecha', 'saldo', 'debito', 'credito', 'importe', 'concepto'];
+const ORDEN: Campo[] = ['subcategoria', 'categoria', 'fecha', 'saldo', 'debito', 'credito', 'importe', 'tipo', 'notas', 'concepto'];
 
 export const ETIQUETA_CAMPO: Record<Campo, string> = {
   fecha: 'Fecha',
@@ -33,7 +37,21 @@ export const ETIQUETA_CAMPO: Record<Campo, string> = {
   saldo: 'Saldo',
   categoria: 'Categoría',
   subcategoria: 'Subcategoría',
+  tipo: 'Gasto o ingreso',
+  notas: 'Notas',
 };
+
+/**
+ * Error de un archivo que se ha leído pero cuyas columnas no se han podido identificar
+ * solas. Lleva el análisis dentro para que la pantalla ofrezca mapearlas a mano en vez
+ * de dejar al usuario en un callejón sin salida.
+ */
+export class ErrorColumnas extends Error {
+  constructor(public analisis: Analisis, public filas: any[][]) {
+    super('No he reconocido las columnas de este archivo.');
+    this.name = 'ErrorColumnas';
+  }
+}
 
 export interface Mapeo {
   /** Fila de cabeceras, o -1 si el archivo no tiene. */

@@ -49,3 +49,23 @@ export function parseFecha(val: any): string {
 export function esFecha(val: any): boolean {
   return parseFecha(val) !== '';
 }
+
+/** Lee un número escrito a la europea («1.234,56») o a la anglosajona («1,234.56»). */
+export function parseNumberString(val: any): number {
+  if (typeof val === 'number') return val;
+  let str = String(val).trim();
+  // if format is something like "1.234,56" or "1,234.56"
+  if (str.includes(',') && str.includes('.')) {
+    if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+      // Spanish/European: 1.234,56
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      // US/UK: 1,234.56
+      str = str.replace(/,/g, '');
+    }
+  } else if (str.includes(',')) {
+    // Only comma, e.g., "12,34"
+    str = str.replace(',', '.');
+  }
+  return parseFloat(str);
+}

@@ -1,8 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Movimiento, Categoria } from '../storage/types';
 import { getDeterministaColor } from '../colors';
-import { parseNumberString } from './parser';
-import { parseFecha, normalizarTexto } from './valores';
+import { leerFilas } from './parser';
+import { parseFecha, normalizarTexto, parseNumberString } from './valores';
+import { analizarHoja, ErrorColumnas, Mapeo } from './columnas';
 
 export interface ResultadoPlantilla {
   movimientos: Movimiento[];
@@ -20,6 +21,14 @@ const normalizar = normalizarTexto;
 function categoriaId(nombre: string): string {
   return nombre.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
 }
+
+/** ¿Esta fila es una cabecera repetida a media hoja? Si lo es, se salta sin quejarse. */
+function esFilaDeCabecera(row: any[]): boolean {
+  const celdas = row.map(c => normalizar(String(c ?? ''))).filter(Boolean);
+  return celdas.length > 0 && celdas.every(c => CABECERAS_CONOCIDAS.has(c));
+}
+
+const CABECERAS_CONOCIDAS = new Set(['FECHA', 'CONCEPTO', 'IMPORTE', 'CATEGORIA', 'TIPO', 'NOTAS']);
 
 /** Genera y descarga la plantilla .xlsx con ejemplos e instrucciones. */
 export async function descargarPlantillaGastos(categorias: Categoria[]): Promise<void> {
@@ -70,41 +79,33 @@ export async function descargarPlantillaGastos(categorias: Categoria[]): Promise
 export async function parsePlantillaGastos(
   fileData: any,
   categoriasExistentes: Categoria[],
-  hashesExistentes: Set<string>
+  hashesExistentes: Set<string>,
+  mapeoForzado?: Mapeo
 ): Promise<ResultadoPlantilla> {
-  const XLSX = await import('xlsx');
+  // raw:true evita que SheetJS "adivine" las fechas de texto ambiguas (DD/MM vs MM/DD)
+  // y las convierta a serie usando el formato US (05/07 → 5-mayo en vez de 5-julio).
+  // Con raw:true recibimos el valor original y es NUESTRO parseFecha —determinista
+  // DD/MM— quien decide. Sin esto, los gastos de un mes acaban en otro y desaparecen
+  // de la lista de Movimientos del mes que miras.
+  const rawData = await leerFilas(fileData, { raw: true, hojaPreferida: 'Gastos' });
 
-  // raw:true en la LECTURA además del sheet_to_json: evita que SheetJS "adivine" las
-  // fechas de texto ambiguas (DD/MM vs MM/DD) y las convierta a serie usando el formato
-  // US (05/07 → 5-mayo en vez de 5-julio). Con raw:true recibimos el valor original
-  // (string tal cual o serie de Excel de una celda-fecha real) y es NUESTRO parseFecha
-  // —determinista DD/MM— quien decide. Sin esto, los gastos de un mes acaban en otro y
-  // desaparecen de la lista de Movimientos del mes que miras.
-  const wb = XLSX.read(fileData, { type: 'binary', raw: true });
-  const sheetName = wb.SheetNames.find(n => normalizar(n) === 'GASTOS') || wb.SheetNames[0];
-  const sheet = wb.Sheets[sheetName];
-  const rawData = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: true, defval: '' });
+  // Misma detección que los extractos: la plantilla ya no exige que las columnas se
+  // llamen exactamente FECHA/CONCEPTO/IMPORTE. Si no da, se lanza `ErrorColumnas` para
+  // que la pantalla pida el mapeo a mano en vez de rechazar el archivo.
+  const analisis = analizarHoja(rawData);
+  const mapeo = mapeoForzado || analisis.mapeo;
+  if (!mapeoForzado && !analisis.completo) throw new ErrorColumnas(analisis, rawData);
 
-  let headerRowIndex = -1;
-  let headers: string[] = [];
-  for (let i = 0; i < Math.min(10, rawData.length); i++) {
-    const row = (rawData[i] || []).map(c => (typeof c === 'string' ? normalizar(c) : ''));
-    if (row.includes('FECHA') && row.includes('CONCEPTO') && row.includes('IMPORTE')) {
-      headerRowIndex = i;
-      headers = row;
-      break;
-    }
+  const headerRowIndex = mapeo.filaDatos - 1;
+  const idxFecha = mapeo.columnas.fecha;
+  const idxConcepto = mapeo.columnas.concepto;
+  const idxImporte = mapeo.columnas.importe;
+  const idxCategoria = mapeo.columnas.categoria ?? -1;
+  const idxTipo = mapeo.columnas.tipo ?? -1;
+  const idxNotas = mapeo.columnas.notas ?? -1;
+  if (idxFecha === undefined || idxConcepto === undefined || idxImporte === undefined) {
+    throw new ErrorColumnas(analisis, rawData);
   }
-  if (headerRowIndex === -1) {
-    throw new Error('No se encontraron las columnas FECHA, CONCEPTO e IMPORTE. Usa la plantilla descargable de Ajustes.');
-  }
-
-  const idxFecha = headers.indexOf('FECHA');
-  const idxConcepto = headers.indexOf('CONCEPTO');
-  const idxImporte = headers.indexOf('IMPORTE');
-  const idxCategoria = headers.indexOf('CATEGORIA');
-  const idxTipo = headers.indexOf('TIPO');
-  const idxNotas = headers.indexOf('NOTAS');
 
   const movimientos: Movimiento[] = [];
   const nuevasCategorias: Categoria[] = [];
@@ -124,6 +125,8 @@ export async function parsePlantillaGastos(
 
     const fecha = parseFecha(row[idxFecha]);
     if (!fecha) {
+      // La cabecera repetida a media hoja no es un error del usuario: es ruido del Excel.
+      if (esFilaDeCabecera(row)) continue;
       errores.push(`Fila ${numFila}: fecha vacía o inválida (usa DD/MM/AAAA).`);
       continue;
     }

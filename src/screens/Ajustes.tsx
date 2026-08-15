@@ -8,7 +8,7 @@ import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Ta
 import { parseExcelData, ErrorColumnas, adaptar, ParsedResultado } from '../lib/excel/parser';
 import { leerConMapeo, Analisis, Mapeo } from '../lib/excel/columnas';
 import { MapeoColumnas } from '../components/ui/MapeoColumnas';
-import { descargarPlantillaGastos, parsePlantillaGastos } from '../lib/excel/plantilla';
+import { descargarPlantillaGastos, parsePlantillaGastos, ResultadoPlantilla } from '../lib/excel/plantilla';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
 import { getDeterministaColor } from '../lib/colors';
 import { sugerirCategoria } from '../lib/categorias/sugerencias';
@@ -40,8 +40,14 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
   const [backups, setBackups] = useState(getBackups());
   const [novedadesOpen, setNovedadesOpen] = useState(false);
   const [saldoBanco, setSaldoBanco] = useState('');
-  // Extracto leído cuyas columnas no se han reconocido: se guarda para mapearlas a mano.
-  const [porMapear, setPorMapear] = useState<{ analisis: Analisis; filas: any[][] } | null>(null);
+  // Archivo leído cuyas columnas no se han reconocido: se guarda para mapearlas a mano.
+  // `destino` dice a qué flujo hay que devolverlo, porque el botón de extracto y el de
+  // plantilla comparten la misma pantalla de mapeo.
+  const [porMapear, setPorMapear] = useState<
+    | { destino: 'extracto'; analisis: Analisis; filas: any[][] }
+    | { destino: 'plantilla'; analisis: Analisis; filas: any[][]; datos: any }
+    | null
+  >(null);
   const { toast } = useToast();
 
   const nDuplicados = useMemo(() => buscarDuplicados(state.movimientos).length, [state.movimientos]);
@@ -152,7 +158,7 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
       } catch (err) {
         if (err instanceof ErrorColumnas) {
           // Columnas no reconocidas: que las diga el usuario en vez de rendirse.
-          setPorMapear({ analisis: err.analisis, filas: err.filas });
+          setPorMapear({ destino: 'extracto', analisis: err.analisis, filas: err.filas });
         } else {
           playError();
           toast((err as Error).message || 'No se pudo leer el Excel.', 'error');
@@ -163,10 +169,24 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const confirmarMapeo = (mapeo: Mapeo) => {
+  const confirmarMapeo = async (mapeo: Mapeo) => {
     if (!porMapear) return;
-    const parsed = adaptar(leerConMapeo(porMapear.filas, mapeo));
+    const pendiente = porMapear;
     setPorMapear(null);
+
+    if (pendiente.destino === 'plantilla') {
+      const hashes = new Set<string>(state.movimientos.map(m => m.hash));
+      const r = await parsePlantillaGastos(pendiente.datos, state.categorias, hashes, mapeo);
+      if (r.movimientos.length === 0 && r.errores.length === 0) {
+        playError();
+        toast('Con esas columnas no sale ningún movimiento. Revisa cuál es la fecha.', 'error');
+        return;
+      }
+      aplicarPlantilla(r);
+      return;
+    }
+
+    const parsed = adaptar(leerConMapeo(pendiente.filas, mapeo));
     if (parsed.movimientos.length === 0) {
       playError();
       toast('Con esas columnas no sale ningún movimiento. Revisa cuál es la fecha.', 'error');
@@ -186,100 +206,99 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
     }
   };
 
-  const handlePlantillaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  /** Vuelca una plantilla ya leída: solo añade movimientos y categorías. */
+  const aplicarPlantilla = (resultado: ResultadoPlantilla) => {
+    if (resultado.movimientos.length === 0 && resultado.errores.length === 0 && resultado.duplicadosEnArchivo === 0) {
+      playError();
+      toast('La plantilla no contiene ninguna fila con datos.', 'error');
+      return;
+    }
+
+    // Solo se AÑADEN movimientos y categorías nuevas. No se toca saldo ni nóminas.
+    // Sí se planifican los periodos necesarios para que los movimientos importados
+    // caigan dentro de un mes visible (si no, cambiarían el saldo pero no aparecerían
+    // en la lista de Movimientos por estar fuera de todo periodo activo).
+    let mesDestino = '';
+    let periodosConNuevos = 0;
+    if (resultado.movimientos.length > 0) {
+      const idsExistentes = new Set(state.categorias.map(c => c.id));
+
+      const activeMeses = getMesesActivos();
+      const fechas = resultado.movimientos.map(m => m.fecha);
+      const minFecha = fechas.reduce((a, b) => (a < b ? a : b));
+      const maxFecha = fechas.reduce((a, b) => (a > b ? a : b));
+      const nuevosMeses = mesesParaCubrir(activeMeses, minFecha, maxFecha);
+
+      const mapaMeses = new Map<string, typeof nuevosMeses[number]>();
+      (state.mesesPersonalizados || []).forEach(m => mapaMeses.set(m.id, m));
+      nuevosMeses.forEach(m => mapaMeses.set(m.id, m));
+
+      updateState({
+        movimientos: [...state.movimientos, ...resultado.movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha)),
+        categorias: [...state.categorias, ...resultado.nuevasCategorias.filter(c => !idsExistentes.has(c.id))],
+        ...(nuevosMeses.length > 0
+          ? { mesesPersonalizados: Array.from(mapaMeses.values()).sort((a, b) => b.inicio.localeCompare(a.inicio)) }
+          : {}),
+      });
+
+      // Los meses de Finni se anclan a la nómina (~día 15), así que un movimiento de
+      // primeros de mes cae en el periodo del mes anterior. Al importar en bloque, los
+      // nuevos pueden repartirse en varios periodos. Saltamos al que recibe MÁS (no al
+      // del más reciente): así el usuario aterriza donde está el grueso y no cree que
+      // "no se importó nada" al ver solo un par en el periodo del último movimiento.
+      const allMeses = [...activeMeses, ...nuevosMeses];
+      const conteoPorMes = new Map<string, number>();
+      for (const m of resultado.movimientos) {
+        const id = mesIdDeMovimiento(m, allMeses);
+        if (id) conteoPorMes.set(id, (conteoPorMes.get(id) || 0) + 1);
+      }
+      const ranking = Array.from(conteoPorMes.entries())
+        .map(([id, count]) => ({ id, count, inicio: allMeses.find(mm => mm.id === id)?.inicio || '' }))
+        .sort((a, b) => b.count - a.count || b.inicio.localeCompare(a.inicio));
+      mesDestino = ranking[0]?.id || '';
+      periodosConNuevos = ranking.length;
+    }
+
+    let resumen = `${resultado.movimientos.length} movimientos añadidos.`;
+    if (periodosConNuevos > 1) resumen += ` Se reparten en ${periodosConNuevos} periodos (cámbialos con el selector de mes).`;
+    if (resultado.duplicadosEnArchivo > 0) resumen += ` ${resultado.duplicadosEnArchivo} duplicados omitidos.`;
+    if (resultado.nuevasCategorias.length > 0) resumen += ` Categorías nuevas: ${resultado.nuevasCategorias.map(c => c.nombre).join(', ')}.`;
+
+    if (resultado.movimientos.length > 0) {
+      if (mesDestino) setSelectedMesId(mesDestino);
+      playSuccess();
+      toast(resumen, 'ok');
+    } else {
+      playError();
+    }
+    if (resultado.errores.length > 0) {
+      // Detalle por fila para que el usuario pueda corregir el archivo.
+      const muestra = resultado.errores.slice(0, 8).join('\n');
+      alert(`${resultado.errores.length} filas con error (no importadas):\n\n${muestra}${resultado.errores.length > 8 ? '\n…' : ''}`);
+    }
+  };
+
+  const handlePlantillaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    try {
-      const reader = new FileReader();
-      reader.onload = async (evt) => {
-        try {
-          const bs = evt.target?.result;
-          const hashesExistentes = new Set<string>(state.movimientos.map(m => m.hash));
-          const resultado = await parsePlantillaGastos(bs, state.categorias, hashesExistentes);
-
-          if (resultado.movimientos.length === 0 && resultado.errores.length === 0 && resultado.duplicadosEnArchivo === 0) {
-            playError();
-            toast('La plantilla no contiene ninguna fila con datos.', 'error');
-            return;
-          }
-
-          // Solo se AÑADEN movimientos y categorías nuevas. No se toca saldo ni nóminas.
-          // Sí se planifican los periodos necesarios para que los movimientos importados
-          // caigan dentro de un mes visible (si no, cambiarían el saldo pero no aparecerían
-          // en la lista de Movimientos por estar fuera de todo periodo activo).
-          let mesDestino = '';
-          let periodosConNuevos = 0;
-          if (resultado.movimientos.length > 0) {
-            const idsExistentes = new Set(state.categorias.map(c => c.id));
-
-            const activeMeses = getMesesActivos();
-            const fechas = resultado.movimientos.map(m => m.fecha);
-            const minFecha = fechas.reduce((a, b) => (a < b ? a : b));
-            const maxFecha = fechas.reduce((a, b) => (a > b ? a : b));
-            const nuevosMeses = mesesParaCubrir(activeMeses, minFecha, maxFecha);
-
-            const mapaMeses = new Map<string, typeof nuevosMeses[number]>();
-            (state.mesesPersonalizados || []).forEach(m => mapaMeses.set(m.id, m));
-            nuevosMeses.forEach(m => mapaMeses.set(m.id, m));
-
-            updateState({
-              movimientos: [...state.movimientos, ...resultado.movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha)),
-              categorias: [...state.categorias, ...resultado.nuevasCategorias.filter(c => !idsExistentes.has(c.id))],
-              ...(nuevosMeses.length > 0
-                ? { mesesPersonalizados: Array.from(mapaMeses.values()).sort((a, b) => b.inicio.localeCompare(a.inicio)) }
-                : {}),
-            });
-
-            // Los meses de Finni se anclan a la nómina (~día 15), así que un movimiento de
-            // primeros de mes cae en el periodo del mes anterior. Al importar en bloque, los
-            // nuevos pueden repartirse en varios periodos. Saltamos al que recibe MÁS (no al
-            // del más reciente): así el usuario aterriza donde está el grueso y no cree que
-            // "no se importó nada" al ver solo un par en el periodo del último movimiento.
-            const allMeses = [...activeMeses, ...nuevosMeses];
-            const conteoPorMes = new Map<string, number>();
-            for (const m of resultado.movimientos) {
-              const id = mesIdDeMovimiento(m, allMeses);
-              if (id) conteoPorMes.set(id, (conteoPorMes.get(id) || 0) + 1);
-            }
-            const ranking = Array.from(conteoPorMes.entries())
-              .map(([id, count]) => ({ id, count, inicio: allMeses.find(mm => mm.id === id)?.inicio || '' }))
-              .sort((a, b) => b.count - a.count || b.inicio.localeCompare(a.inicio));
-            mesDestino = ranking[0]?.id || '';
-            periodosConNuevos = ranking.length;
-          }
-
-          let resumen = `${resultado.movimientos.length} movimientos añadidos.`;
-          if (periodosConNuevos > 1) resumen += ` Se reparten en ${periodosConNuevos} periodos (cámbialos con el selector de mes).`;
-          if (resultado.duplicadosEnArchivo > 0) resumen += ` ${resultado.duplicadosEnArchivo} duplicados omitidos.`;
-          if (resultado.nuevasCategorias.length > 0) resumen += ` Categorías nuevas: ${resultado.nuevasCategorias.map(c => c.nombre).join(', ')}.`;
-
-          if (resultado.movimientos.length > 0) {
-            if (mesDestino) setSelectedMesId(mesDestino);
-            playSuccess();
-            toast(resumen, 'ok');
-          } else {
-            playError();
-          }
-          if (resultado.errores.length > 0) {
-            // Detalle por fila para que el usuario pueda corregir el archivo.
-            const muestra = resultado.errores.slice(0, 8).join('\n');
-            alert(`${resultado.errores.length} filas con error (no importadas):\n\n${muestra}${resultado.errores.length > 8 ? '\n…' : ''}`);
-          }
-        } catch (err) {
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const bs = evt.target?.result;
+      const hashes = new Set<string>(state.movimientos.map(m => m.hash));
+      try {
+        aplicarPlantilla(await parsePlantillaGastos(bs, state.categorias, hashes));
+      } catch (err) {
+        if (err instanceof ErrorColumnas) {
+          // La plantilla ya no exige que las columnas se llamen como en la descargable.
+          setPorMapear({ analisis: err.analisis, filas: err.filas, destino: 'plantilla', datos: bs });
+        } else {
           playError();
           toast((err as Error).message || 'No se pudo leer la plantilla.', 'error');
         }
-      };
-      reader.readAsBinaryString(file);
-    } catch (err) {
-      playError();
-      console.error(err);
-    } finally {
-      if (plantillaInputRef.current) {
-        plantillaInputRef.current.value = '';
       }
-    }
+    };
+    reader.readAsBinaryString(file);
+    if (plantillaInputRef.current) plantillaInputRef.current.value = '';
   };
 
   const handleDownloadBackup = () => {

@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.6.0';
+export const APP_VERSION = '2.7.0';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.7.0',
+    fecha: '2026-08-15',
+    titulo: 'La plantilla de gastos, también flexible',
+    cambios: [
+      { tipo: 'mejora', texto: 'La plantilla de gastos ya no exige que las columnas se llamen FECHA, CONCEPTO e IMPORTE ni que vayan en ese orden: vale DESCRIPCIÓN, CANTIDAD, Date, Amount… y si no las reconozco, te pregunto cuál es cada una, igual que con los extractos.' },
+      { tipo: 'mejora', texto: 'Sigue funcionando igual que siempre con la plantilla que descargas de Ajustes: TIPO manda sobre el signo, las notas cuentan para no duplicar y se prefiere la hoja "Gastos".' },
+      { tipo: 'arreglo', texto: 'Una fila de títulos repetida a media hoja ya no se cuenta como fila con error.' },
+    ],
+  },
   {
     version: '2.6.0',
     fecha: '2026-08-15',
