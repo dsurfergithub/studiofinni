@@ -8,6 +8,7 @@ import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Ta
 import { parseExcelData, ErrorColumnas, adaptar, ParsedResultado } from '../lib/excel/parser';
 import { leerConMapeo, Analisis, Mapeo } from '../lib/excel/columnas';
 import { MapeoColumnas } from '../components/ui/MapeoColumnas';
+import { RevisionPeriodos } from '../components/ui/RevisionPeriodos';
 import { descargarPlantillaGastos, parsePlantillaGastos, ResultadoPlantilla } from '../lib/excel/plantilla';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
 import { getDeterministaColor } from '../lib/colors';
@@ -15,9 +16,11 @@ import { sugerirCategoria } from '../lib/categorias/sugerencias';
 import { movimientosACsv } from '../lib/export/csv';
 import { v4 as uuidv4 } from 'uuid';
 import { derivarMeses, generarMesesFuturos, mesesRestantesDelAnio, mesesParaCubrir, mesIdDeMovimiento } from '../lib/finmes/finmes';
+import { repartirPorPeriodo, aplicarDecisiones, Decision, Reparto } from '../lib/finmes/reparto';
 import { getBackups, createManualBackup, migrate } from '../lib/storage/storage';
 import { formatCurrency, getLocalFechaIso } from '../lib/utils';
 import { buscarDuplicados } from '../lib/duplicados/duplicados';
+import { Movimiento } from '../lib/storage/types';
 
 /** Acepta lo que teclee el usuario: «614», «614,30», «1.234,56», «-382.45». */
 function parseImporte(texto: string): number | null {
@@ -48,6 +51,9 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
     | { destino: 'plantilla'; analisis: Analisis; filas: any[][]; datos: any }
     | null
   >(null);
+  // Importación de plantilla en pausa: sus movimientos caen en más de un periodo y
+  // esperamos a que el usuario diga qué hacer con los que se salen.
+  const [porRevisar, setPorRevisar] = useState<{ resultado: ResultadoPlantilla; reparto: Reparto } | null>(null);
   const { toast } = useToast();
 
   const nDuplicados = useMemo(() => buscarDuplicados(state.movimientos).length, [state.movimientos]);
@@ -206,7 +212,26 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
     }
   };
 
-  /** Vuelca una plantilla ya leída: solo añade movimientos y categorías. */
+  /**
+   * Los periodos que harían falta para que ningún movimiento importado quede huérfano
+   * (fuera de todo periodo activo: contaría en el saldo pero no se vería en la lista).
+   */
+  const planificarPeriodos = (movimientos: Movimiento[]) => {
+    const activeMeses = getMesesActivos();
+    if (movimientos.length === 0) return { activeMeses, nuevosMeses: [], todos: activeMeses };
+    const fechas = movimientos.map(m => m.fecha);
+    const minFecha = fechas.reduce((a, b) => (a < b ? a : b));
+    const maxFecha = fechas.reduce((a, b) => (a > b ? a : b));
+    const nuevosMeses = mesesParaCubrir(activeMeses, minFecha, maxFecha);
+    return { activeMeses, nuevosMeses, todos: [...activeMeses, ...nuevosMeses] };
+  };
+
+  /**
+   * Punto de entrada de una plantilla ya leída. Si sus movimientos caen en más de un
+   * periodo —lo normal, porque los meses de Finni van de nómina a nómina y no del 1 al
+   * 31— se para aquí y se pregunta qué hacer con los que se salen, en vez de repartirlos
+   * sin avisar. Con un solo periodo implicado se importa directamente.
+   */
   const aplicarPlantilla = (resultado: ResultadoPlantilla) => {
     if (resultado.movimientos.length === 0 && resultado.errores.length === 0 && resultado.duplicadosEnArchivo === 0) {
       playError();
@@ -214,41 +239,46 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
       return;
     }
 
+    const reparto = repartirPorPeriodo(resultado.movimientos, planificarPeriodos(resultado.movimientos).todos);
+    if (reparto) {
+      setPorRevisar({ resultado, reparto });
+      return;
+    }
+    volcarPlantilla(resultado, resultado.movimientos);
+  };
+
+  /** Vuelca la plantilla con los movimientos ya decididos: solo añade, nunca borra. */
+  const volcarPlantilla = (resultado: ResultadoPlantilla, movimientos: Movimiento[]) => {
     // Solo se AÑADEN movimientos y categorías nuevas. No se toca saldo ni nóminas.
-    // Sí se planifican los periodos necesarios para que los movimientos importados
-    // caigan dentro de un mes visible (si no, cambiarían el saldo pero no aparecerían
-    // en la lista de Movimientos por estar fuera de todo periodo activo).
     let mesDestino = '';
     let periodosConNuevos = 0;
-    if (resultado.movimientos.length > 0) {
-      const idsExistentes = new Set(state.categorias.map(c => c.id));
+    // Las categorías nuevas se filtran por lo que de verdad entra: si el usuario ha
+    // quitado los únicos movimientos de una categoría, esa categoría no se crea.
+    const catsUsadas = new Set(movimientos.map(m => m.categoria));
+    const nuevasCategorias = resultado.nuevasCategorias.filter(c => catsUsadas.has(c.id));
 
-      const activeMeses = getMesesActivos();
-      const fechas = resultado.movimientos.map(m => m.fecha);
-      const minFecha = fechas.reduce((a, b) => (a < b ? a : b));
-      const maxFecha = fechas.reduce((a, b) => (a > b ? a : b));
-      const nuevosMeses = mesesParaCubrir(activeMeses, minFecha, maxFecha);
+    if (movimientos.length > 0) {
+      const idsExistentes = new Set(state.categorias.map(c => c.id));
+      const { activeMeses, nuevosMeses } = planificarPeriodos(movimientos);
 
       const mapaMeses = new Map<string, typeof nuevosMeses[number]>();
       (state.mesesPersonalizados || []).forEach(m => mapaMeses.set(m.id, m));
       nuevosMeses.forEach(m => mapaMeses.set(m.id, m));
 
       updateState({
-        movimientos: [...state.movimientos, ...resultado.movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha)),
-        categorias: [...state.categorias, ...resultado.nuevasCategorias.filter(c => !idsExistentes.has(c.id))],
+        movimientos: [...state.movimientos, ...movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha)),
+        categorias: [...state.categorias, ...nuevasCategorias.filter(c => !idsExistentes.has(c.id))],
         ...(nuevosMeses.length > 0
           ? { mesesPersonalizados: Array.from(mapaMeses.values()).sort((a, b) => b.inicio.localeCompare(a.inicio)) }
           : {}),
       });
 
-      // Los meses de Finni se anclan a la nómina (~día 15), así que un movimiento de
-      // primeros de mes cae en el periodo del mes anterior. Al importar en bloque, los
-      // nuevos pueden repartirse en varios periodos. Saltamos al que recibe MÁS (no al
-      // del más reciente): así el usuario aterriza donde está el grueso y no cree que
-      // "no se importó nada" al ver solo un par en el periodo del último movimiento.
+      // Saltamos al periodo que recibe MÁS (no al del movimiento más reciente): así el
+      // usuario aterriza donde está el grueso y no cree que "no se importó nada" al ver
+      // solo un par en el periodo del último movimiento.
       const allMeses = [...activeMeses, ...nuevosMeses];
       const conteoPorMes = new Map<string, number>();
-      for (const m of resultado.movimientos) {
+      for (const m of movimientos) {
         const id = mesIdDeMovimiento(m, allMeses);
         if (id) conteoPorMes.set(id, (conteoPorMes.get(id) || 0) + 1);
       }
@@ -259,23 +289,34 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
       periodosConNuevos = ranking.length;
     }
 
-    let resumen = `${resultado.movimientos.length} movimientos añadidos.`;
+    const descartados = resultado.movimientos.length - movimientos.length;
+    let resumen = `${movimientos.length} movimientos añadidos.`;
+    if (descartados > 0) resumen += ` ${descartados} descartados por ti.`;
     if (periodosConNuevos > 1) resumen += ` Se reparten en ${periodosConNuevos} periodos (cámbialos con el selector de mes).`;
     if (resultado.duplicadosEnArchivo > 0) resumen += ` ${resultado.duplicadosEnArchivo} duplicados omitidos.`;
-    if (resultado.nuevasCategorias.length > 0) resumen += ` Categorías nuevas: ${resultado.nuevasCategorias.map(c => c.nombre).join(', ')}.`;
+    if (nuevasCategorias.length > 0) resumen += ` Categorías nuevas: ${nuevasCategorias.map(c => c.nombre).join(', ')}.`;
 
-    if (resultado.movimientos.length > 0) {
+    if (movimientos.length > 0) {
       if (mesDestino) setSelectedMesId(mesDestino);
       playSuccess();
       toast(resumen, 'ok');
     } else {
       playError();
+      toast(resumen, 'error');
     }
     if (resultado.errores.length > 0) {
       // Detalle por fila para que el usuario pueda corregir el archivo.
       const muestra = resultado.errores.slice(0, 8).join('\n');
       alert(`${resultado.errores.length} filas con error (no importadas):\n\n${muestra}${resultado.errores.length > 8 ? '\n…' : ''}`);
     }
+  };
+
+  /** Confirmación del repaso de periodos: se importa con lo que haya decidido el usuario. */
+  const confirmarRevision = (decisiones: Map<string, Decision>, mesDestinoId: string) => {
+    if (!porRevisar) return;
+    const { resultado } = porRevisar;
+    setPorRevisar(null);
+    volcarPlantilla(resultado, aplicarDecisiones(resultado.movimientos, decisiones, mesDestinoId));
   };
 
   const handlePlantillaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -597,6 +638,13 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
         analisis={porMapear?.analisis || null}
         onCancel={() => setPorMapear(null)}
         onConfirm={confirmarMapeo}
+      />
+
+      <RevisionPeriodos
+        isOpen={!!porRevisar}
+        reparto={porRevisar?.reparto || null}
+        onCancel={() => setPorRevisar(null)}
+        onConfirm={confirmarRevision}
       />
     </div>
   );

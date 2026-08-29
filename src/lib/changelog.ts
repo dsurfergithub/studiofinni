@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.7.0';
+export const APP_VERSION = '2.8.0';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.8.0',
+    fecha: '2026-08-29',
+    titulo: 'Al importar, te aviso de lo que se sale del periodo',
+    cambios: [
+      { tipo: 'nuevo', texto: 'Al subir una plantilla, si los movimientos caen en más de un periodo te enseño cuáles se salen antes de importar nada. Tus periodos van de nómina a nómina, así que un archivo de un mes natural casi siempre se parte en dos.' },
+      { tipo: 'nuevo', texto: 'De cada uno decides ahí mismo: moverlo al periodo principal, dejarlo donde cae o no importarlo. También en bloque, de un toque.' },
+      { tipo: 'mejora', texto: '"Mover" no le cambia la fecha al movimiento: solo dice a qué periodo cuenta, así que el extracto sigue cuadrando con el banco.' },
+    ],
+  },
   {
     version: '2.7.0',
     fecha: '2026-08-15',
