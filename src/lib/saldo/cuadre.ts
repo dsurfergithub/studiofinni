@@ -67,13 +67,28 @@ export interface Cuadre {
   movimientosFuturos: number;
 }
 
+/** Día anterior a una fecha YYYY-MM-DD. */
+function diaAnterior(fecha: string): string {
+  const [y, m, d] = fecha.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d - 1));
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
+}
+
 /**
- * Prepara el cuadre contra el banco: mueve el ancla del saldo a `hoy` con la cifra
- * real y devuelve un movimiento de ajuste por la diferencia acumulada (duplicados,
- * ingresos sin apuntar, importes mal tecleados…).
+ * Prepara el cuadre contra el banco: reancla el saldo con la cifra real y devuelve un
+ * movimiento de ajuste por la diferencia acumulada (duplicados, ingresos sin apuntar,
+ * importes mal tecleados…).
  *
- * El movimiento de ajuste se fecha en `hoy`, es decir EN el ancla y no después, de
- * modo que no vuelve a mover el saldo: solo explica el salto en la lista de
+ * El ancla se fecha AYER, no hoy, aunque la cifra sea la de hoy. El convenio de
+ * `calcularSaldo` es que el ancla ya incluye todo su propio día, así que anclar en hoy
+ * dejaba fuera del saldo —para siempre, no solo hasta mañana— cualquier gasto que se
+ * apuntara con la fecha de hoy después de cuadrar. Anclando en ayer, el día de hoy queda
+ * del lado que sí suma. Para que la cuenta siga cuadrando ahora mismo, al ancla se le
+ * descuenta lo que ya hubiera apuntado hoy: al volver a sumarse da exactamente `saldoReal`.
+ *
+ * El movimiento de ajuste se fecha en `hoy` y no vuelve a mover el saldo, porque
+ * `calcularSaldo` excluye siempre los ajustes: solo explica el salto en la lista de
  * movimientos y en los totales del periodo en curso.
  *
  * Función pura: no toca el estado, devuelve las piezas para que las aplique el store.
@@ -83,7 +98,14 @@ export function prepararCuadre(state: AppState, saldoReal: number, hoy: string, 
   // El `+ 0` normaliza el -0 que sale de toFixed cuando ya cuadra (así el signo
   // que se muestra en pantalla nunca es un «−0,00 €»).
   const diferencia = Number((saldoReal - saldoApp).toFixed(2)) + 0;
-  const cuenta: Cuenta = { ...state.cuenta, saldoActual: saldoReal, fechaSaldo: hoy };
+  const yaApuntadoHoy = state.movimientos
+    .filter(m => !esAjusteDeSaldo(m) && m.fecha === hoy)
+    .reduce((sum, m) => sum + m.importe, 0);
+  const cuenta: Cuenta = {
+    ...state.cuenta,
+    saldoActual: Number((saldoReal - yaApuntadoHoy).toFixed(2)) + 0,
+    fechaSaldo: diaAnterior(hoy),
+  };
 
   const movimiento: Movimiento | null = diferencia === 0 ? null : {
     id,
