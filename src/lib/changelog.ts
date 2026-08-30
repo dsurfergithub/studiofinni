@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.8.0';
+export const APP_VERSION = '2.8.1';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.8.1',
+    fecha: '2026-08-30',
+    titulo: 'Lo que apuntas hoy vuelve a mover el saldo',
+    cambios: [
+      { tipo: 'arreglo', texto: 'Después de cuadrar con el banco, los gastos que apuntabas con la fecha de hoy no bajaban el saldo. Y no era hasta el día siguiente: se quedaban fuera para siempre. Ya cuentan.' },
+      { tipo: 'mejora', texto: 'El cuadre sigue dejando el saldo exacto del banco, aunque ya hubieras apuntado movimientos ese mismo día.' },
+    ],
+  },
   {
     version: '2.8.0',
     fecha: '2026-08-29',
