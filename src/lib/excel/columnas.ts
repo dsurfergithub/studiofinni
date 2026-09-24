@@ -145,7 +145,10 @@ function deducirPorDatos(rows: any[][], desde: number): Mapeo['columnas'] {
       const v = texto(rows[i]?.[c]);
       if (!v) continue;
       muestras++;
-      if (esFecha(rows[i][c])) fechas++;
+      // Leído en crudo, un saldo de 30.000 € también "es" una fecha de Excel. Las fechas
+      // de verdad son números enteros; los importes casi nunca.
+      const celda = rows[i][c];
+      if (esFecha(celda) && (typeof celda !== 'number' || Number.isInteger(celda))) fechas++;
       const n = parseNumberString(v);
       if (!Number.isNaN(n) && /\d/.test(v)) { numeros++; if (n < 0) negativos++; }
       largo += v.length;
@@ -173,6 +176,18 @@ function deducirPorDatos(rows: any[][], desde: number): Mapeo['columnas'] {
   return columnas;
 }
 
+/**
+ * Cómo se enseña una celda en la pantalla de mapeo. Leídas en crudo, las fechas de Excel
+ * son números (46289); se muestran como fecha para que se reconozca la columna.
+ */
+function textoMuestra(v: any): string {
+  if (typeof v === 'number' && Number.isInteger(v) && esFecha(v)) {
+    const [y, m, d] = parseFecha(v).split('-');
+    return `${d}/${m}/${y}`;
+  }
+  return texto(v);
+}
+
 /** Primeros valores no vacíos de cada columna, para la pantalla de mapeo manual. */
 function describirColumnas(rows: any[][], mapeo: Mapeo): ColumnaInfo[] {
   const nCols = rows.reduce((max, r) => Math.max(max, r?.length || 0), 0);
@@ -181,7 +196,7 @@ function describirColumnas(rows: any[][], mapeo: Mapeo): ColumnaInfo[] {
   for (let c = 0; c < nCols; c++) {
     const muestra: string[] = [];
     for (let i = mapeo.filaDatos; i < rows.length && muestra.length < 3; i++) {
-      const v = texto(rows[i]?.[c]);
+      const v = textoMuestra(rows[i]?.[c]);
       if (v) muestra.push(v.length > 34 ? `${v.slice(0, 34)}…` : v);
     }
     // Una columna entera vacía no le sirve a nadie para mapear.
@@ -236,8 +251,9 @@ export function leerConMapeo(rows: any[][], mapeo: Mapeo): ResultadoLectura {
   const movimientos: Movimiento[] = [];
   const categoriasEncontradas = new Map<string, string>();
   const errores: string[] = [];
-  let saldoActual = 0;
-  let fechaSaldo = '';
+  // Saldos leídos, con su fila: el que vale es el del día más reciente, no el de la
+  // primera fila. Hay bancos que exportan del más antiguo al más nuevo.
+  const saldos: { fecha: string; saldo: number; fila: number }[] = [];
 
   for (let i = mapeo.filaDatos; i < rows.length; i++) {
     const row = rows[i];
@@ -267,10 +283,11 @@ export function leerConMapeo(rows: any[][], mapeo: Mapeo): ResultadoLectura {
     const catId = categoriaId(nombreCat);
     categoriasEncontradas.set(catId, nombreCat);
 
-    if (!fechaSaldo && columnas.saldo !== undefined) {
+    if (columnas.saldo !== undefined) {
       const s = parseNumberString(texto(row[columnas.saldo]));
-      if (!Number.isNaN(s)) { saldoActual = s; fechaSaldo = fecha; }
+      if (!Number.isNaN(s)) saldos.push({ fecha, saldo: s, fila: i });
     }
+    const notas = columnas.notas !== undefined ? texto(row[columnas.notas]) : '';
 
     movimientos.push({
       id: uuidv4(),
@@ -282,8 +299,25 @@ export function leerConMapeo(rows: any[][], mapeo: Mapeo): ResultadoLectura {
       fuente: 'import:extracto',
       // Mismo hash que el resto de imports, para que el anti-duplicados siga sirviendo.
       hash: `${fecha}|${importe.toFixed(2)}|${concepto.toLowerCase()}`,
+      ...(notas ? { notas } : {}),
     });
   }
 
+  const { saldoActual, fechaSaldo } = saldoMasReciente(saldos);
   return { movimientos, categoriasEncontradas, saldoActual, fechaSaldo, errores };
+}
+
+/**
+ * El saldo del último día del extracto. Si ese día hay varias filas, el saldo bueno es
+ * el de la última operación: la primera fila en un extracto de nuevo a viejo (lo normal)
+ * y la última en uno de viejo a nuevo.
+ */
+function saldoMasReciente(saldos: { fecha: string; saldo: number; fila: number }[]): { saldoActual: number; fechaSaldo: string } {
+  if (saldos.length === 0) return { saldoActual: 0, fechaSaldo: '' };
+  const ascendente = saldos[0].fecha < saldos[saldos.length - 1].fecha;
+  let mejor = saldos[0];
+  for (const s of saldos) {
+    if (s.fecha > mejor.fecha || (s.fecha === mejor.fecha && ascendente)) mejor = s;
+  }
+  return { saldoActual: mejor.saldo, fechaSaldo: mejor.fecha };
 }

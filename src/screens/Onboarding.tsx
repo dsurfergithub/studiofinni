@@ -1,14 +1,17 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Upload, Sparkles } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { parseExcelData } from '../lib/excel/parser';
+import { parseExcelData, ParsedResultado } from '../lib/excel/parser';
+import { RevisionImportacion } from '../components/ui/RevisionImportacion';
+import { proponerCategorias, Propuesta } from '../lib/importacion/agrupar';
+import { volcarExtracto } from '../lib/importacion/aplicar';
 import { useStore } from '../lib/storage/store';
 import { useToast } from '../components/ui/Toast';
 import { playSuccess, playError } from '../lib/audio/sounds';
-import { getDeterministaColor } from '../lib/colors';
-import { calcularNombreMes, generarMesesFuturos, mesesRestantesDelAnio, derivarMeses } from '../lib/finmes/finmes';
-import { MesFinanciero, Categoria } from '../lib/storage/types';
-import { v4 as uuidv4 } from 'uuid';
+import { calcularNombreMes, generarMesesFuturos, mesesRestantesDelAnio } from '../lib/finmes/finmes';
+import { MesFinanciero, Categoria, Movimiento, ReglaCategoria } from '../lib/storage/types';
+
+const idDeCategoria = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
 
 const CATEGORIAS_SUGERIDAS: Categoria[] = [
   { id: 'alimentacion', nombre: 'Alimentación', color: '#4ade80', icono: 'shopping-cart', tipo: 'gasto', macro: 'variable' },
@@ -24,8 +27,22 @@ const CATEGORIAS_SUGERIDAS: Categoria[] = [
 
 export function Onboarding({ onFinish }: { onFinish: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { updateState, getMesesActivos } = useStore();
+  const { updateState, state, setSelectedMesId } = useStore();
   const { toast } = useToast();
+  const [porCategorizar, setPorCategorizar] = useState<{ propuesta: Propuesta; parsed: ParsedResultado } | null>(null);
+
+  const confirmarCategorias = (movimientos: Movimiento[], nuevasCategorias: Categoria[], nuevasReglas: ReglaCategoria[]) => {
+    if (!porCategorizar) return;
+    const { parsed } = porCategorizar;
+    setPorCategorizar(null);
+    // Se parte de un estado sin categorías: las del extracto (revisadas) son las que valen.
+    const base = { ...state, categorias: [], movimientos: [] };
+    const { cambios, mesDestino } = volcarExtracto(base, movimientos, nuevasCategorias, parsed);
+    updateState({ ...cambios, reglas: nuevasReglas, hasOnboarded: true, cuenta: { ...(cambios.cuenta || state.cuenta), banco: parsed.banco } });
+    if (mesDestino) setSelectedMesId(mesDestino);
+    playSuccess();
+    onFinish();
+  };
 
   const handleStartFresh = () => {
     const today = new Date();
@@ -68,58 +85,22 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
         try {
           const bs = evt.target?.result;
           const parsed = await parseExcelData(bs);
+          if (parsed.movimientos.length === 0) throw new Error('El archivo no tiene ningún movimiento.');
 
-          const nuevasCats = Array.from(parsed.categoriasEncontradas).map(n => ({
-            id: n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-'),
-            nombre: n,
-            color: getDeterministaColor(n),
-            tipo: 'ambos' as const
-          }));
-
-          const ingresos = parsed.movimientos.filter(m => m.importe > 0);
-          const nominasMapeo = new Map<string, typeof ingresos[0]>();
-          ingresos.forEach(ing => {
-            const m = ing.fecha.substring(0, 7);
-            if (!nominasMapeo.has(m) || nominasMapeo.get(m)!.importe < ing.importe) {
-              nominasMapeo.set(m, ing);
-            }
+          // Antes de entrar, se revisan las categorías agrupadas por comercio.
+          const nombresBanco = new Map(Array.from(parsed.categoriasEncontradas).map(n => [idDeCategoria(n), n]));
+          setPorCategorizar({
+            propuesta: proponerCategorias({ movimientos: parsed.movimientos, nombresBanco, categorias: [], historial: [] }),
+            parsed,
           });
-
-          const nominasAncla = Array.from(nominasMapeo.values()).map(m => ({
-            id: uuidv4(),
-            fecha: m.fecha,
-            importe: m.importe,
-            concepto: m.concepto,
-            movimientoId: m.id
-          })).sort((a,b) => a.fecha.localeCompare(b.fecha));
-
-          // Planifica el resto del año a partir del periodo más reciente detectado.
-          const derived = derivarMeses(nominasAncla);
-          const futuros = derived.length > 0
-            ? generarMesesFuturos(derived[0], mesesRestantesDelAnio(derived[0]) || 12)
-            : [];
-
-          updateState({
-            hasOnboarded: true,
-            movimientos: parsed.movimientos.sort((a,b) => b.fecha.localeCompare(a.fecha)),
-            categorias: nuevasCats,
-            nominasAncla,
-            mesesPersonalizados: futuros,
-            cuenta: {
-              banco: parsed.banco,
-              saldoActual: parsed.saldoActual,
-              fechaSaldo: parsed.fechaSaldo
-            }
-          });
-
-          playSuccess();
-          onFinish();
         } catch (err) {
           playError();
           toast((err as Error).message || 'No se pudo leer el archivo. ¿Es un extracto compatible?', 'error');
         }
       };
       reader.readAsBinaryString(file);
+      // Para poder volver a elegir el mismo archivo si se cancela la revisión.
+      if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err) {
       playError();
       console.error(err);
@@ -169,6 +150,14 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
       <p className="text-xs text-dim max-w-xs">
         Tus datos nunca salen de tu dispositivo. Todo se procesa y guarda localmente.
       </p>
+
+      <RevisionImportacion
+        isOpen={!!porCategorizar}
+        propuesta={porCategorizar?.propuesta || null}
+        yaEstaban={0}
+        onCancel={() => setPorCategorizar(null)}
+        onConfirm={confirmarCategorias}
+      />
     </div>
   );
 }

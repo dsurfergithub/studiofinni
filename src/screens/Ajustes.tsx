@@ -4,23 +4,26 @@ import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import { Novedades } from '../components/ui/Novedades';
 import { APP_VERSION } from '../lib/changelog';
-import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone, Scale, CopyCheck, GitCompare } from 'lucide-react';
+import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone, Scale, CopyCheck, GitCompare, Wand2 } from 'lucide-react';
 import { parseExcelData, ErrorColumnas, adaptar, ParsedResultado } from '../lib/excel/parser';
 import { leerConMapeo, Analisis, Mapeo } from '../lib/excel/columnas';
 import { MapeoColumnas } from '../components/ui/MapeoColumnas';
 import { RevisionPeriodos } from '../components/ui/RevisionPeriodos';
+import { RevisionImportacion } from '../components/ui/RevisionImportacion';
+import { proponerCategorias, Propuesta } from '../lib/importacion/agrupar';
+import { volcarExtracto, SaldoExtracto } from '../lib/importacion/aplicar';
 import { descargarPlantillaGastos, parsePlantillaGastos, ResultadoPlantilla } from '../lib/excel/plantilla';
 import { playSuccess, playError, soundsEnabled, setSoundsEnabled } from '../lib/audio/sounds';
-import { getDeterministaColor } from '../lib/colors';
-import { sugerirCategoria } from '../lib/categorias/sugerencias';
 import { movimientosACsv } from '../lib/export/csv';
-import { v4 as uuidv4 } from 'uuid';
-import { derivarMeses, generarMesesFuturos, mesesRestantesDelAnio, mesesParaCubrir, mesIdDeMovimiento } from '../lib/finmes/finmes';
+import { generarMesesFuturos, mesesRestantesDelAnio, mesesParaCubrir, mesIdDeMovimiento } from '../lib/finmes/finmes';
 import { repartirPorPeriodo, aplicarDecisiones, Decision, Reparto } from '../lib/finmes/reparto';
 import { getBackups, createManualBackup, migrate } from '../lib/storage/storage';
 import { formatCurrency, getLocalFechaIso } from '../lib/utils';
 import { buscarDuplicados } from '../lib/duplicados/duplicados';
-import { Movimiento } from '../lib/storage/types';
+import { Categoria, Movimiento, ReglaCategoria } from '../lib/storage/types';
+import { fusionarReglas } from '../lib/categorias/reglas';
+
+const idDeCategoria = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
 
 /** Acepta lo que teclee el usuario: «614», «614,30», «1.234,56», «-382.45». */
 function parseImporte(texto: string): number | null {
@@ -54,6 +57,8 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
   // Importación de plantilla en pausa: sus movimientos caen en más de un periodo y
   // esperamos a que el usuario diga qué hacer con los que se salen.
   const [porRevisar, setPorRevisar] = useState<{ resultado: ResultadoPlantilla; reparto: Reparto } | null>(null);
+  // Extracto leído a la espera de que se revisen sus categorías.
+  const [porCategorizar, setPorCategorizar] = useState<{ propuesta: Propuesta; yaEstaban: number; saldo: SaldoExtracto } | null>(null);
   const { toast } = useToast();
 
   const nDuplicados = useMemo(() => buscarDuplicados(state.movimientos).length, [state.movimientos]);
@@ -103,55 +108,37 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
     toast(`Listo: ${nuevos.length} meses planificados hasta final de año.`, 'ok');
   };
 
-  /** Vuelca un extracto ya leído: movimientos, categorías, nóminas ancla, periodos y saldo. */
+  /**
+   * Un extracto ya leído no se vuelca de golpe: se quitan los que ya estaban y el resto
+   * pasa por la revisión de categorías, agrupado por comercio.
+   */
   const aplicarExtracto = (parsed: ParsedResultado) => {
-    const nuevasCats = Array.from(parsed.categoriasEncontradas).map(n => ({
-      id: n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-'),
-      nombre: n, color: getDeterministaColor(n), tipo: 'ambos' as const,
-    }));
-    const dictIds = new Set(state.categorias.map(c => c.id));
-    const finalCats = [...state.categorias, ...nuevasCats.filter(c => !dictIds.has(c.id))];
-    const dictMovs = new Set(state.movimientos.map(m => m.hash));
-    const nuevosMovs = parsed.movimientos
-      .filter(m => !dictMovs.has(m.hash))
-      .map(m => {
-        // Las filas que llegan sin clasificar heredan la categoría de conceptos
-        // parecidos ya registrados (el usuario siempre puede corregirla).
-        if (m.categoria !== 'sin-clasificar') return m;
-        const sugerida = sugerirCategoria(m.concepto, state.movimientos);
-        return sugerida ? { ...m, categoria: sugerida } : m;
-      });
-    const todoMovas = [...state.movimientos, ...nuevosMovs];
-
-    const ingresosRecurrentes = todoMovas.filter(m => m.importe > 0);
-    const nominasMapeo = new Map<string, typeof ingresosRecurrentes[0]>();
-    ingresosRecurrentes.forEach(ing => {
-      const m = ing.fecha.substring(0, 7);
-      if (!nominasMapeo.has(m) || nominasMapeo.get(m)!.importe < ing.importe) nominasMapeo.set(m, ing);
+    const hashes = new Set(state.movimientos.map(m => m.hash));
+    const nuevos = parsed.movimientos.filter(m => !hashes.has(m.hash));
+    const yaEstaban = parsed.movimientos.length - nuevos.length;
+    if (nuevos.length === 0) {
+      toast(`Nada nuevo: los ${parsed.movimientos.length} movimientos de este archivo ya estaban en la app.`, 'info');
+      return;
+    }
+    const nombresBanco = new Map(Array.from(parsed.categoriasEncontradas).map(n => [idDeCategoria(n), n]));
+    setPorCategorizar({
+      propuesta: proponerCategorias({ movimientos: nuevos, nombresBanco, categorias: state.categorias, historial: state.movimientos, reglas: state.reglas }),
+      yaEstaban,
+      saldo: { saldoActual: parsed.saldoActual, fechaSaldo: parsed.fechaSaldo },
     });
-    const nominasAncla = Array.from(nominasMapeo.values()).map(m => ({
-      id: m.id || uuidv4(), fecha: m.fecha, importe: m.importe, concepto: m.concepto, movimientoId: m.id,
-    })).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  };
 
-    const derivedMonths = derivarMeses(nominasAncla);
-    const baseMes = derivedMonths[0];
-    const nuevosFuturos = baseMes ? generarMesesFuturos(baseMes, mesesRestantesDelAnio(baseMes) || 12) : [];
-
-    const mapa = new Map();
-    (state.mesesPersonalizados || []).forEach(m => mapa.set(m.id, m));
-    nuevosFuturos.forEach(m => mapa.set(m.id, m));
-
-    updateState({
-      movimientos: todoMovas.sort((a, b) => b.fecha.localeCompare(a.fecha)),
-      categorias: finalCats,
-      nominasAncla,
-      mesesPersonalizados: Array.from(mapa.values()).sort((a, b) => b.inicio.localeCompare(a.inicio)),
-      cuenta: { ...state.cuenta, saldoActual: parsed.saldoActual || state.cuenta.saldoActual, fechaSaldo: parsed.fechaSaldo || state.cuenta.fechaSaldo },
-    });
-
-    if (derivedMonths.length > 0) setSelectedMesId(derivedMonths[0].id);
+  /** Fin de la revisión: movimientos, categorías, nóminas, periodos y saldo. */
+  const confirmarCategorias = (movimientos: Movimiento[], nuevasCategorias: Categoria[], nuevasReglas: ReglaCategoria[]) => {
+    if (!porCategorizar) return;
+    const { saldo } = porCategorizar;
+    setPorCategorizar(null);
+    const { cambios, mesDestino } = volcarExtracto(state, movimientos, nuevasCategorias, saldo);
+    updateState({ ...cambios, ...(nuevasReglas.length > 0 ? { reglas: fusionarReglas(state.reglas, nuevasReglas) } : {}) });
+    if (mesDestino) setSelectedMesId(mesDestino);
     playSuccess();
-    toast(`Importados ${nuevosMovs.length} movimientos nuevos. Meses del resto del año planificados.`, 'ok');
+    const cats = nuevasCategorias.length > 0 ? ` y ${nuevasCategorias.length} categorías nuevas` : '';
+    toast(`Importados ${movimientos.length} movimientos${cats}. Periodos recalculados desde tus nóminas.`, 'ok');
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -528,6 +515,13 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
               <div className="flex items-center gap-3 text-sm font-bold"><Tag size={20} className="text-accent" /><span>Categorías</span></div>
               <ChevronRight size={18} className="text-muted" />
             </button>
+            <button onClick={() => onNavigate?.('reglas')} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
+              <div className="flex items-center gap-3 text-sm font-bold"><Wand2 size={20} className="text-accent" /><span>Reglas de categorías</span></div>
+              <span className="flex items-center gap-2">
+                {(state.reglas || []).length > 0 && <span className="text-xs text-muted font-bold">{state.reglas.length}</span>}
+                <ChevronRight size={18} className="text-muted" />
+              </span>
+            </button>
             <button onClick={() => onNavigate?.('conciliacion')} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
               <div className="flex items-center gap-3 text-sm font-bold"><GitCompare size={20} className="text-accent" /><span>Comparar con el banco</span></div>
               <ChevronRight size={18} className="text-muted" />
@@ -645,6 +639,14 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
         reparto={porRevisar?.reparto || null}
         onCancel={() => setPorRevisar(null)}
         onConfirm={confirmarRevision}
+      />
+
+      <RevisionImportacion
+        isOpen={!!porCategorizar}
+        propuesta={porCategorizar?.propuesta || null}
+        yaEstaban={porCategorizar?.yaEstaban || 0}
+        onCancel={() => setPorCategorizar(null)}
+        onConfirm={confirmarCategorias}
       />
     </div>
   );

@@ -10,6 +10,7 @@ import { Movimientos } from './screens/Movimientos';
 import { Presupuesto } from './screens/Presupuesto';
 import { PlanAnual } from './screens/PlanAnual';
 import { Categorias } from './screens/Categorias';
+import { Reglas } from './screens/Reglas';
 import { Ajustes } from './screens/Ajustes';
 import { Suscripciones } from './screens/Suscripciones';
 import { Duplicados } from './screens/Duplicados';
@@ -58,6 +59,7 @@ function AppContent() {
         )}
         {currentTab === 'suscripciones' && <Suscripciones onBack={() => setCurrentTab('dashboard')} />}
         {currentTab === 'categorias' && <Categorias onBack={() => setCurrentTab('ajustes')} />}
+        {currentTab === 'reglas' && <Reglas onBack={() => setCurrentTab('ajustes')} />}
         {currentTab === 'duplicados' && <Duplicados onBack={() => setCurrentTab('ajustes')} />}
         {currentTab === 'conciliacion' && <Conciliacion onBack={() => setCurrentTab('ajustes')} />}
         {currentTab === 'ajustes' && <Ajustes onNavigate={setCurrentTab} />}

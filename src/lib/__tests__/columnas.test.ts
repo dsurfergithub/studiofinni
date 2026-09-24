@@ -125,3 +125,35 @@ describe('cuando no llega para leerlo solo', () => {
     expect(camposQueFaltan({ fecha: 0, concepto: 1 })).toEqual(['importe']);
   });
 });
+
+describe('saldo y notas del extracto', () => {
+  it('toma el saldo del día más reciente aunque el extracto vaya de viejo a nuevo', () => {
+    const r = leer([
+      ['FECHA', 'CONCEPTO', 'IMPORTE', 'SALDO'],
+      ['01/08/2026', 'Uno', '-10', '90'],
+      ['14/08/2026', 'Dos', '-5', '85'],
+      ['14/08/2026', 'Tres', '-5', '80'],
+    ]);
+    expect(r.fechaSaldo).toBe('2026-08-14');
+    expect(r.saldoActual).toBe(80);
+  });
+
+  it('de nuevo a viejo, el saldo es el de la primera fila del último día', () => {
+    const r = leer([
+      ['FECHA', 'CONCEPTO', 'IMPORTE', 'SALDO'],
+      ['14/08/2026', 'Tres', '-5', '80'],
+      ['14/08/2026', 'Dos', '-5', '85'],
+      ['01/08/2026', 'Uno', '-10', '90'],
+    ]);
+    expect(r.saldoActual).toBe(80);
+  });
+
+  it('lee fechas de Excel en crudo y guarda el comentario como nota', () => {
+    const r = leer([
+      ['F. VALOR', 'DESCRIPCIÓN', 'COMENTARIO', 'IMPORTE (€)', 'SALDO (€)'],
+      [46289, 'Pago en PASTISSERIA', 'Cumple', -8.5, 24.49],
+    ]);
+    expect(r.movimientos[0]).toMatchObject({ fecha: '2026-09-24', importe: -8.5, notas: 'Cumple' });
+    expect(r.analisis.columnas[0].muestra[0]).toBe('24/09/2026');
+  });
+});

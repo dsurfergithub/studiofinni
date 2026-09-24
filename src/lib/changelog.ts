@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.8.1';
+export const APP_VERSION = '2.10.0';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,30 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.10.0',
+    fecha: '2026-09-24',
+    titulo: 'Reglas, traspasos fuera y avisos de gasto',
+    cambios: [
+      { tipo: 'nuevo', texto: 'Categorías que no cuentan: marca una categoría como "no cuenta en ingresos y gastos" y sus movimientos mueven el saldo pero no inflan Inicio, Presupuesto, Plan ni Insights. Pensado para los traspasos entre tus cuentas. "Movimientos excluidos" de ING ya viene marcada.' },
+      { tipo: 'nuevo', texto: 'Reglas de categorías (Ajustes → Reglas): "si el concepto contiene GALP, va a Transporte". Al importar mandan sobre lo que diga el banco. Se crean ahí o con "Recordar siempre" en la revisión de la importación, y puedes aplicarlas también a los movimientos que ya tienes.' },
+      { tipo: 'nuevo', texto: 'Aviso de gastos fuera de lo habitual: si una categoría va claramente por encima de tu media de los últimos periodos (más de un 40% y al menos 30 €), lo ves en Inicio y con detalle en Insights.' },
+    ],
+  },
+  {
+    version: '2.9.0',
+    fecha: '2026-09-24',
+    titulo: 'Importar con calma y comparar años',
+    cambios: [
+      { tipo: 'nuevo', texto: 'El extracto ya no entra de golpe: antes te enseño los movimientos agrupados por comercio o persona (todo Mercadona junto, todos los Bizum a la misma persona…) con una categoría propuesta. Cambias un grupo entero de un toque o abres el grupo y cambias uno suelto.' },
+      { tipo: 'nuevo', texto: 'La categoría propuesta sale de lo que ya hiciste otras veces con ese comercio, de la que trae el banco o del propio nombre (farmacia, Repsol, Netflix…). "Por revisar" te lleva directo a lo dudoso: sin categoría, repartido en varias o metido en un "Otros".' },
+      { tipo: 'nuevo', texto: 'En Insights, "Comparar": un mes contra otro (enero 2026 contra enero 2025) con el cambio por categoría, o los años mes a mes en un gráfico y enero-septiembre contra enero-septiembre para comparar en igualdad.' },
+      { tipo: 'arreglo', texto: 'Los periodos empezaban el día que no era: como "nómina" se cogía el ingreso más grande del mes, y un traspaso entre tus cuentas o la paga extra le ganaban a la nómina de verdad. Ahora se busca la nómina y, si hay dos en el mes, la del día de cobro habitual. Vuelve a subir tu extracto y se recalculan.' },
+      { tipo: 'arreglo', texto: 'Si empezaste desde cero y luego importaste, podías tener dos "Septiembre" con fechas distintas. Los meses del 1 al 31 que pisan a los de nómina se quitan solos.' },
+      { tipo: 'mejora', texto: 'Las fechas del extracto se leen tal cual vienen en el Excel, sin pasar por el formato americano (mes/día), y el saldo es el del último día del extracto aunque venga de viejo a nuevo. Subir un extracto antiguo ya no te devuelve al saldo de entonces.' },
+      { tipo: 'mejora', texto: 'Si el banco llama a una categoría igual que una tuya ("Alimentación"), se usa la tuya en vez de crear otra repetida. El comentario del extracto se guarda como nota.' },
+    ],
+  },
   {
     version: '2.8.1',
     fecha: '2026-08-30',

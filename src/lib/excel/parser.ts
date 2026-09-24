@@ -59,7 +59,10 @@ export async function leerFilas(fileBase64OrBuffer: any, opciones: OpcionesLectu
  * `ErrorColumnas` con lo analizado para que se pueda completar a mano.
  */
 export async function parseExcelData(fileBase64OrBuffer: any): Promise<ParsedResultado> {
-  const filas = await leerFilas(fileBase64OrBuffer);
+  // En crudo, igual que la plantilla: si SheetJS formatea la celda, una fecha con el
+  // formato por defecto de Excel sale como «9/24/26» (mes/día) y nuestro lector, que es
+  // DD/MM, la descarta o la pone en otro mes. El número de serie no tiene esa ambigüedad.
+  const filas = await leerFilas(fileBase64OrBuffer, { raw: true });
   if (filas.length === 0) throw new Error('El archivo no tiene ninguna hoja con datos.');
 
   const analisis = analizarHoja(filas);

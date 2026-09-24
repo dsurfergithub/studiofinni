@@ -11,7 +11,7 @@ describe('migrate', () => {
       savingsAcumulado: 100,
     };
     const s = migrate(legacy);
-    expect(s.schemaVersion).toBe(5);
+    expect(s.schemaVersion).toBe(6);
     expect(s.cierres).toEqual({});
     expect(s.movimientos[0].enPresupuesto).toBe(true);
     expect(s.theme).toBe('dark');
@@ -36,7 +36,7 @@ describe('migrate', () => {
       },
     };
     const s = migrate(v3);
-    expect(s.schemaVersion).toBe(5);
+    expect(s.schemaVersion).toBe(6);
     const enero = s.planAnual.datos['2026'][0];
     expect(enero.sueldo).toBe(2000);
     expect(enero.grupos.fijos).toBe(800);
@@ -47,7 +47,7 @@ describe('migrate', () => {
 
   it('v4→v5: estrena los cierres de mes vacíos, sin inventar saldos hacia atrás', () => {
     const s = migrate({ schemaVersion: 4, movimientos: [], mesesPersonalizados: [{ id: 'm-jul', nombre: 'Julio', clave: '2026-07', inicio: '2026-07-01', fin: '2026-07-31' }] });
-    expect(s.schemaVersion).toBe(5);
+    expect(s.schemaVersion).toBe(6);
     expect(s.cierres).toEqual({});
     expect(s.mesesPersonalizados).toHaveLength(1);
   });
@@ -60,9 +60,26 @@ describe('migrate', () => {
 
   it('no revienta con un objeto vacío', () => {
     const s = migrate({});
-    expect(s.schemaVersion).toBe(5);
+    expect(s.schemaVersion).toBe(6);
     expect(Array.isArray(s.movimientos)).toBe(true);
     expect(s.cierres).toEqual({});
     expect(s.planAnual.escenario).toEqual({});
+  });
+});
+
+describe('migración a v6', () => {
+  it('añade reglas vacías y saca del análisis las categorías de traspasos', () => {
+    const s = migrate({
+      schemaVersion: 5,
+      movimientos: [],
+      categorias: [
+        { id: 'mov-excl', nombre: 'Movimientos excluidos', color: '#000', tipo: 'ambos' },
+        { id: 'ali', nombre: 'Alimentación', color: '#000', tipo: 'gasto' },
+        { id: 'tras', nombre: 'Traspasos', color: '#000', tipo: 'ambos', excluirDeAnalisis: false },
+      ],
+    });
+    expect(s.schemaVersion).toBe(6);
+    expect(s.reglas).toEqual([]);
+    expect(s.categorias.map(c => c.excluirDeAnalisis)).toEqual([true, undefined, false]);
   });
 });
