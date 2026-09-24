@@ -1,9 +1,10 @@
 import { AppState, PlanAnual, PlanFila } from './types';
 import { PLAN_COLUMNAS } from '../plan/plan';
+import { esCategoriaDeTraspaso } from '../analisis';
 
 const STORAGE_KEY = 'finni_v2';
 const BACKUP_KEY = 'finni_backups';
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_BACKUPS = 4;
 
@@ -18,6 +19,7 @@ export function getInitialState(): AppState {
     theme: 'dark',
     movimientos: [],
     categorias: [],
+    reglas: [],
     suscripciones: [],
     nominasAncla: [],
     mesesPersonalizados: [],
@@ -115,7 +117,19 @@ export function migrate(state: any): AppState {
     s.schemaVersion = 5;
   }
 
+  // --- Migración a schema v6: reglas y categorías fuera del análisis ---
+  if (s.schemaVersion < 6) {
+    if (!Array.isArray(s.reglas)) s.reglas = [];
+    // Los traspasos entre cuentas que ya trajo el banco dejan de inflar ingresos y
+    // gastos. Solo si nadie lo ha decidido antes (el campo no existía).
+    s.categorias = (s.categorias || []).map((c: any) =>
+      c.excluirDeAnalisis === undefined && esCategoriaDeTraspaso(c.nombre || '') ? { ...c, excluirDeAnalisis: true } : c
+    );
+    s.schemaVersion = 6;
+  }
+
   // Defensa adicional por si vienen campos sueltos.
+  if (!Array.isArray(s.reglas)) s.reglas = [];
   if (!s.cierres || typeof s.cierres !== 'object') s.cierres = {};
   if (!Array.isArray(s.suscripciones)) s.suscripciones = [];
   if (s.theme !== 'light' && s.theme !== 'dark') s.theme = 'dark';

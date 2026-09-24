@@ -1,4 +1,5 @@
 import { Categoria, MacroTipo, Movimiento, PlanFila } from '../storage/types';
+import { categoriasFueraDeAnalisis, cuentaEnAnalisis } from '../analisis';
 
 export interface PlanColumna {
   id: string; // clave usada en PlanFila.grupos (coincide con los grupos legacy)
@@ -46,9 +47,11 @@ export function realDelAnio(
   const filas: PlanFila[] = Array.from({ length: 12 }, emptyPlanFila);
   const catById = new Map(categorias.map(c => [c.id, c]));
   const prefijo = `${year}-`;
+  const fuera = categoriasFueraDeAnalisis(categorias);
 
   for (const m of movimientos) {
-    if (!m.fecha.startsWith(prefijo)) continue;
+    // Ni ajustes de cuadre ni traspasos entre tus cuentas: no son sueldo ni gasto.
+    if (!m.fecha.startsWith(prefijo) || !cuentaEnAnalisis(m, fuera)) continue;
     const idx = parseInt(m.fecha.slice(5, 7), 10) - 1;
     if (idx < 0 || idx > 11) continue;
     if (m.importe > 0) {

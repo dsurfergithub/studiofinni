@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useStore } from '../lib/storage/store';
 import { FinMesSelector } from '../components/ui/FinMesSelector';
 import { formatCurrency, getLocalFechaIso } from '../lib/utils';
 import { MovimientoEditor } from '../components/ui/MovimientoEditor';
 import { totalMensual } from '../lib/suscripciones/suscripciones';
 import { movimientoEnMes } from '../lib/finmes/finmes';
-import { esAjusteDeSaldo } from '../lib/saldo/cuadre';
 import { CierreMesCard } from '../components/ui/CierreMesCard';
 import { ArrowDownLeft, ArrowUpRight, Repeat, ChevronRight } from 'lucide-react';
+import { categoriasFueraDeAnalisis, cuentaEnAnalisis } from '../lib/analisis';
+import { detectarGastosRaros } from '../lib/insights/raros';
+import { AvisoGastoRaro } from '../components/ui/GastosRaros';
 
 interface DashboardProps {
   selectedMesId: string;
@@ -32,7 +34,9 @@ export function Dashboard({ selectedMesId, onChangeMes, onNavigate }: DashboardP
 
   if (currentMes) {
     // Los ajustes de cuadre se excluyen: corrigen el saldo, no son gasto ni ingreso del mes.
-    const movsMes = state.movimientos.filter(m => movimientoEnMes(m, currentMes, meses) && !esAjusteDeSaldo(m));
+    // Tampoco las categorías fuera del análisis (traspasos entre tus cuentas).
+    const fuera = categoriasFueraDeAnalisis(state.categorias);
+    const movsMes = state.movimientos.filter(m => movimientoEnMes(m, currentMes, meses) && cuentaEnAnalisis(m, fuera));
     movsMes.forEach(m => {
       if (m.importe > 0) ingresos += m.importe;
       else {
@@ -41,6 +45,13 @@ export function Dashboard({ selectedMesId, onChangeMes, onNavigate }: DashboardP
       }
     });
   }
+
+  // Aviso de categorías que van muy por encima de lo habitual (detalle en Insights).
+  const raros = useMemo(
+    () => (currentMes ? detectarGastosRaros(state.movimientos, meses, currentMes, categoriasFueraDeAnalisis(state.categorias)) : []),
+    // `meses` se recalcula en cada render: se memoiza por lo que de verdad lo cambia.
+    [state.movimientos, state.categorias, state.nominasAncla, state.mesesPersonalizados, currentMes?.id]
+  );
 
   const sortedCats = Object.entries(gastosPorCategoria)
     .sort((a, b) => b[1] - a[1])
@@ -107,6 +118,8 @@ export function Dashboard({ selectedMesId, onChangeMes, onNavigate }: DashboardP
             <ArrowUpRight size={20} strokeWidth={2.5} /> Ingreso
           </button>
         </div>
+
+        <AvisoGastoRaro raros={raros} categorias={state.categorias} onClick={() => onNavigate?.('insights')} />
 
         {/* Ingresos / Gastos del mes */}
         <div className="grid grid-cols-2 gap-4">

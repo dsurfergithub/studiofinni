@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.9.0';
+export const APP_VERSION = '2.10.0';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.10.0',
+    fecha: '2026-09-24',
+    titulo: 'Reglas, traspasos fuera y avisos de gasto',
+    cambios: [
+      { tipo: 'nuevo', texto: 'Categorías que no cuentan: marca una categoría como "no cuenta en ingresos y gastos" y sus movimientos mueven el saldo pero no inflan Inicio, Presupuesto, Plan ni Insights. Pensado para los traspasos entre tus cuentas. "Movimientos excluidos" de ING ya viene marcada.' },
+      { tipo: 'nuevo', texto: 'Reglas de categorías (Ajustes → Reglas): "si el concepto contiene GALP, va a Transporte". Al importar mandan sobre lo que diga el banco. Se crean ahí o con "Recordar siempre" en la revisión de la importación, y puedes aplicarlas también a los movimientos que ya tienes.' },
+      { tipo: 'nuevo', texto: 'Aviso de gastos fuera de lo habitual: si una categoría va claramente por encima de tu media de los últimos periodos (más de un 40% y al menos 30 €), lo ves en Inicio y con detalle en Insights.' },
+    ],
+  },
   {
     version: '2.9.0',
     fecha: '2026-09-24',

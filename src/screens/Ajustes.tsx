@@ -4,7 +4,7 @@ import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import { Novedades } from '../components/ui/Novedades';
 import { APP_VERSION } from '../lib/changelog';
-import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone, Scale, CopyCheck, GitCompare } from 'lucide-react';
+import { Upload, Trash2, Download, Volume2, VolumeX, CalendarPlus, Moon, Sun, Tag, Repeat, RotateCcw, ChevronRight, Clock, FileSpreadsheet, FileUp, Megaphone, Scale, CopyCheck, GitCompare, Wand2 } from 'lucide-react';
 import { parseExcelData, ErrorColumnas, adaptar, ParsedResultado } from '../lib/excel/parser';
 import { leerConMapeo, Analisis, Mapeo } from '../lib/excel/columnas';
 import { MapeoColumnas } from '../components/ui/MapeoColumnas';
@@ -20,7 +20,8 @@ import { repartirPorPeriodo, aplicarDecisiones, Decision, Reparto } from '../lib
 import { getBackups, createManualBackup, migrate } from '../lib/storage/storage';
 import { formatCurrency, getLocalFechaIso } from '../lib/utils';
 import { buscarDuplicados } from '../lib/duplicados/duplicados';
-import { Categoria, Movimiento } from '../lib/storage/types';
+import { Categoria, Movimiento, ReglaCategoria } from '../lib/storage/types';
+import { fusionarReglas } from '../lib/categorias/reglas';
 
 const idDeCategoria = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
 
@@ -121,19 +122,19 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
     }
     const nombresBanco = new Map(Array.from(parsed.categoriasEncontradas).map(n => [idDeCategoria(n), n]));
     setPorCategorizar({
-      propuesta: proponerCategorias({ movimientos: nuevos, nombresBanco, categorias: state.categorias, historial: state.movimientos }),
+      propuesta: proponerCategorias({ movimientos: nuevos, nombresBanco, categorias: state.categorias, historial: state.movimientos, reglas: state.reglas }),
       yaEstaban,
       saldo: { saldoActual: parsed.saldoActual, fechaSaldo: parsed.fechaSaldo },
     });
   };
 
   /** Fin de la revisión: movimientos, categorías, nóminas, periodos y saldo. */
-  const confirmarCategorias = (movimientos: Movimiento[], nuevasCategorias: Categoria[]) => {
+  const confirmarCategorias = (movimientos: Movimiento[], nuevasCategorias: Categoria[], nuevasReglas: ReglaCategoria[]) => {
     if (!porCategorizar) return;
     const { saldo } = porCategorizar;
     setPorCategorizar(null);
     const { cambios, mesDestino } = volcarExtracto(state, movimientos, nuevasCategorias, saldo);
-    updateState(cambios);
+    updateState({ ...cambios, ...(nuevasReglas.length > 0 ? { reglas: fusionarReglas(state.reglas, nuevasReglas) } : {}) });
     if (mesDestino) setSelectedMesId(mesDestino);
     playSuccess();
     const cats = nuevasCategorias.length > 0 ? ` y ${nuevasCategorias.length} categorías nuevas` : '';
@@ -513,6 +514,13 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
             <button onClick={() => onNavigate?.('categorias')} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
               <div className="flex items-center gap-3 text-sm font-bold"><Tag size={20} className="text-accent" /><span>Categorías</span></div>
               <ChevronRight size={18} className="text-muted" />
+            </button>
+            <button onClick={() => onNavigate?.('reglas')} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
+              <div className="flex items-center gap-3 text-sm font-bold"><Wand2 size={20} className="text-accent" /><span>Reglas de categorías</span></div>
+              <span className="flex items-center gap-2">
+                {(state.reglas || []).length > 0 && <span className="text-xs text-muted font-bold">{state.reglas.length}</span>}
+                <ChevronRight size={18} className="text-muted" />
+              </span>
             </button>
             <button onClick={() => onNavigate?.('conciliacion')} className="w-full flex justify-between items-center p-4 hover:bg-surface-elevated transition-colors">
               <div className="flex items-center gap-3 text-sm font-bold"><GitCompare size={20} className="text-accent" /><span>Comparar con el banco</span></div>

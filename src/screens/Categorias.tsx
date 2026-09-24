@@ -53,7 +53,9 @@ export function Categorias({ onBack }: { onBack?: () => void }) {
                 </div>
                 <div className="min-w-0 text-left">
                   <span className="font-bold text-text truncate max-w-[200px] block">{c.nombre}</span>
-                  {c.tipo !== 'ingreso' && (
+                  {c.excluirDeAnalisis ? (
+                    <span className="text-[10px] text-warning">No cuenta en ingresos ni gastos</span>
+                  ) : c.tipo !== 'ingreso' && (
                     <span className="text-[10px] text-muted">
                       {MACRO_OPCIONES.find(o => o.valor === macroDeCategoria(c))?.nombre}
                     </span>

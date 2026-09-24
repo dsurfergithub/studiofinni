@@ -5,7 +5,8 @@ import { Button } from './Button';
 import { cn, formatCurrency } from '../../lib/utils';
 import { getDeterministaColor } from '../../lib/colors';
 import { normalizarConcepto } from '../../lib/categorias/sugerencias';
-import { Categoria, Movimiento } from '../../lib/storage/types';
+import { Categoria, Movimiento, ReglaCategoria } from '../../lib/storage/types';
+import { crearRegla } from '../../lib/categorias/reglas';
 import {
   Propuesta, OpcionCategoria, GrupoImport, Origen, ETIQUETA_ORIGEN, SIN_CLASIFICAR, construirImportacion,
 } from '../../lib/importacion/agrupar';
@@ -84,7 +85,7 @@ export function RevisionImportacion({
   /** Movimientos del archivo que ya estaban en la app y no se vuelven a importar. */
   yaEstaban: number;
   onCancel: () => void;
-  onConfirm: (movimientos: Movimiento[], nuevasCategorias: Categoria[]) => void;
+  onConfirm: (movimientos: Movimiento[], nuevasCategorias: Categoria[], nuevasReglas: ReglaCategoria[]) => void;
 }) {
   const [asignacion, setAsignacion] = useState<Record<string, string>>({});
   const [opciones, setOpciones] = useState<OpcionCategoria[]>([]);
@@ -95,6 +96,8 @@ export function RevisionImportacion({
   const [busqueda, setBusqueda] = useState('');
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
   const [limite, setLimite] = useState(POR_PAGINA);
+  // Grupos cuya categoría se guardará como regla para las próximas importaciones.
+  const [recordar, setRecordar] = useState<Set<string>>(new Set());
 
   const porId = useMemo(() => new Map((propuesta?.movimientos || []).map(m => [m.id, m])), [propuesta]);
 
@@ -117,6 +120,7 @@ export function RevisionImportacion({
     if (propuesta) {
       const pendientes = pendientesDe(propuesta.asignacion, propuesta.grupos, propuesta.opciones);
       setAsignacion(propuesta.asignacion);
+      setRecordar(new Set());
       setOpciones(propuesta.opciones);
       setFiltro(pendientes.size > 0 ? 'revisar' : 'todos');
       setFijados(pendientes);
@@ -181,7 +185,15 @@ export function RevisionImportacion({
 
   const confirmar = () => {
     const r = construirImportacion(propuesta.movimientos, asignacion, opciones);
-    onConfirm(r.movimientos, r.nuevasCategorias);
+    // Una regla por grupo marcado, con la categoría que tenga al final (si es una sola).
+    const reglas: ReglaCategoria[] = [];
+    for (const g of propuesta.grupos) {
+      if (!recordar.has(g.clave)) continue;
+      const cats = new Set(g.ids.map(id => asignacion[id]));
+      const [cat] = Array.from(cats);
+      if (cats.size === 1 && cat !== SIN_CLASIFICAR) reglas.push(crearRegla(g.clave, cat));
+    }
+    onConfirm(r.movimientos, r.nuevasCategorias, reglas);
   };
 
   /** El origen que más pesa en el grupo, para la etiqueta de "de dónde sale". */
@@ -293,9 +305,31 @@ export function RevisionImportacion({
                 <div className="flex items-center gap-2">
                   <SelectorCategoria valor={valor} varias={varias} opciones={opciones} onChange={v => asignar(g.ids, v)} />
                 </div>
-                <p className="text-[10px] uppercase tracking-wider font-bold text-dim">
-                  {cambiado ? 'elegido por ti' : ETIQUETA_ORIGEN[origen]}
-                </p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] uppercase tracking-wider font-bold text-dim">
+                    {cambiado ? 'elegido por ti' : ETIQUETA_ORIGEN[origen]}
+                    {opciones.find(o => o.id === valor)?.excluirDeAnalisis && ' · no cuenta en gastos'}
+                  </p>
+                  {!varias && valor !== SIN_CLASIFICAR && origen !== 'regla' && (
+                    <button
+                      type="button"
+                      aria-pressed={recordar.has(g.clave)}
+                      onClick={() => setRecordar(prev => {
+                        const next = new Set(prev);
+                        if (next.has(g.clave)) next.delete(g.clave);
+                        else next.add(g.clave);
+                        return next;
+                      })}
+                      className={cn(
+                        'flex items-center gap-1 px-2 h-7 rounded-lg text-[11px] font-bold border transition-colors flex-shrink-0',
+                        recordar.has(g.clave) ? 'bg-accent-soft text-accent border-accent-soft' : 'text-muted border-border hover:text-text'
+                      )}
+                    >
+                      {recordar.has(g.clave) && <Check size={12} />}
+                      Recordar siempre
+                    </button>
+                  )}
+                </div>
 
                 {abierto && (
                   <div className="space-y-1.5 pt-1 border-t border-border">
@@ -331,6 +365,11 @@ export function RevisionImportacion({
           <Button onClick={confirmar} disabled={total === 0} className="w-full h-14 text-lg font-bold">
             Importar {total}
           </Button>
+          {recordar.size > 0 && (
+            <p className="text-[11px] text-accent text-center -mt-1">
+              {recordar.size === 1 ? 'Se guarda 1 regla' : `Se guardan ${recordar.size} reglas`} para la próxima vez (Ajustes → Reglas).
+            </p>
+          )}
           <p className="text-[11px] text-dim text-center -mt-1">
             {sinCategoria > 0
               ? `${sinCategoria} entrarán como «Sin clasificar»: podrás cambiarlos luego desde Movimientos.`

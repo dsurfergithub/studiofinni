@@ -4,12 +4,12 @@ import { FinMesSelector } from '../components/ui/FinMesSelector';
 import { useToast } from '../components/ui/Toast';
 import { formatCurrency, getLocalFechaIso } from '../lib/utils';
 import { movimientoEnMes } from '../lib/finmes/finmes';
-import { esAjusteDeSaldo } from '../lib/saldo/cuadre';
 import { Sheet } from '../components/ui/Sheet';
 import { Button } from '../components/ui/Button';
 import { SavingsMeta } from '../lib/storage/types';
 import { v4 as uuidv4 } from 'uuid';
 import { Plus, Tag, Sparkle, PiggyBank } from 'lucide-react';
+import { categoriasFueraDeAnalisis, cuentaEnAnalisis } from '../lib/analisis';
 
 interface PresupuestoProps {
   selectedMesId: string;
@@ -53,9 +53,10 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
   const spentPerCat: Record<string, number> = {};
   let gastoPuntual = 0;
   if (cMes) {
+    const fuera = categoriasFueraDeAnalisis(state.categorias);
     state.movimientos.forEach(m => {
       // Un ajuste de cuadre negativo no es gasto del mes: corrige el saldo y ya está.
-      if (m.importe < 0 && !esAjusteDeSaldo(m) && movimientoEnMes(m, cMes, activeMeses)) {
+      if (m.importe < 0 && cuentaEnAnalisis(m, fuera) && movimientoEnMes(m, cMes, activeMeses)) {
         if (m.enPresupuesto === false) {
           gastoPuntual += Math.abs(m.importe);
         } else {

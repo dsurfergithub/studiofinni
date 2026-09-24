@@ -23,6 +23,7 @@ export function CategoryEditor({ isOpen, onClose, category }: CategoryEditorProp
   const [icono, setIcono] = useState('tag');
   const [tipo, setTipo] = useState<'gasto' | 'ingreso' | 'ambos'>('gasto');
   const [macro, setMacro] = useState<MacroTipo>('variable');
+  const [excluir, setExcluir] = useState(false);
 
   useEffect(() => {
     if (category) {
@@ -31,12 +32,14 @@ export function CategoryEditor({ isOpen, onClose, category }: CategoryEditorProp
       setIcono(category.icono || 'tag');
       setTipo(category.tipo);
       setMacro(category.macro || 'variable');
+      setExcluir(!!category.excluirDeAnalisis);
     } else {
       setNombre('');
       setColor(PALETA_COLORES[0]);
       setIcono('tag');
       setTipo('gasto');
       setMacro('variable');
+      setExcluir(false);
     }
   }, [category, isOpen]);
 
@@ -45,7 +48,7 @@ export function CategoryEditor({ isOpen, onClose, category }: CategoryEditorProp
 
     if (category) {
       updateCategoria(category.id, {
-        nombre, color, icono, tipo, macro
+        nombre, color, icono, tipo, macro, excluirDeAnalisis: excluir
       });
     } else {
       addCategoria({
@@ -54,7 +57,8 @@ export function CategoryEditor({ isOpen, onClose, category }: CategoryEditorProp
         color,
         icono,
         tipo,
-        macro
+        macro,
+        excluirDeAnalisis: excluir
       });
     }
     onClose();
@@ -118,6 +122,27 @@ export function CategoryEditor({ isOpen, onClose, category }: CategoryEditorProp
             <p className="text-[11px] text-muted px-1">Sirve para que el Plan anual agrupe tus gastos reales automáticamente.</p>
           </div>
         )}
+
+        {/* Fuera del análisis: traspasos entre tus cuentas y similares */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!excluir}
+          onClick={() => setExcluir(e => !e)}
+          className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-surface border border-border text-left"
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-text">Cuenta en ingresos y gastos</span>
+            <span className="block text-[11px] text-muted leading-tight">
+              {excluir
+                ? 'No cuenta: solo mueve el saldo. Para traspasos entre tus cuentas, que no son dinero que ganas ni gastas.'
+                : 'Sale en Inicio, Presupuesto, Plan e Insights. Desactívalo para traspasos entre tus cuentas.'}
+            </span>
+          </span>
+          <span className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors ${excluir ? 'bg-border' : 'bg-accent'}`}>
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${excluir ? 'left-0.5' : 'left-[22px]'}`} />
+          </span>
+        </button>
 
         {/* Color */}
         <div className="space-y-2">

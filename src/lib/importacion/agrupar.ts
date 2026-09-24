@@ -1,14 +1,17 @@
-import { Categoria, MacroTipo, Movimiento } from '../storage/types';
+import { Categoria, MacroTipo, Movimiento, ReglaCategoria } from '../storage/types';
+import { categoriaPorReglas } from '../categorias/reglas';
 import { normalizarConcepto } from '../categorias/sugerencias';
 import { getDeterministaColor } from '../colors';
 import { esAjusteDeSaldo } from '../saldo/cuadre';
+import { esCategoriaDeTraspaso } from '../analisis';
 
 export const SIN_CLASIFICAR = 'sin-clasificar';
 
 /** De dónde sale la categoría que se propone para un movimiento. */
-export type Origen = 'historial' | 'banco' | 'palabra' | 'ninguno';
+export type Origen = 'regla' | 'historial' | 'banco' | 'palabra' | 'ninguno';
 
 export const ETIQUETA_ORIGEN: Record<Origen, string> = {
+  regla: 'por tu regla',
   historial: 'como otras veces',
   banco: 'según el banco',
   palabra: 'por el nombre',
@@ -22,6 +25,8 @@ export interface OpcionCategoria {
   color: string;
   icono?: string;
   macro?: MacroTipo;
+  /** Traspasos y similares: se crean ya fuera del análisis. */
+  excluirDeAnalisis?: boolean;
   nueva: boolean;
 }
 
@@ -219,23 +224,27 @@ const slug = (nombre: string) => nombre.toLowerCase().replace(/[^a-z0-9]/g, '-')
  * Prepara la revisión de una importación: agrupa los movimientos por comercio y propone
  * una categoría para cada uno. Por orden de confianza:
  *
- * 1. **Historial**: lo que ya hiciste con ese comercio en la app. Si recategorizaste
+ * 1. **Regla**: tus «si contiene X → Y». Son órdenes explícitas, así que mandan.
+ * 2. **Historial**: lo que ya hiciste con ese comercio en la app. Si recategorizaste
  *    «Mercadona» de «Alimentación» a «Súper», manda lo tuyo.
- * 2. **Banco**: la categoría que trae el extracto, reutilizando la tuya si se llama igual.
- * 3. **Palabra clave**: «farmacia», «repsol», «netflix»… para extractos sin categorías.
- * 4. Si no hay pista, «Sin clasificar», y el grupo se marca para revisar.
+ * 3. **Banco**: la categoría que trae el extracto, reutilizando la tuya si se llama igual.
+ * 4. **Palabra clave**: «farmacia», «repsol», «netflix»… para extractos sin categorías.
+ * 5. Si no hay pista, «Sin clasificar», y el grupo se marca para revisar.
  */
 export function proponerCategorias({
   movimientos,
   nombresBanco,
   categorias,
   historial,
+  reglas = [],
 }: {
   movimientos: Movimiento[];
   /** Nombre de categoría del banco por el id que lleva cada movimiento importado. */
   nombresBanco: Map<string, string>;
   categorias: Categoria[];
   historial: Movimiento[];
+  /** Tus reglas «si contiene X → Y»: mandan sobre todo lo demás. */
+  reglas?: ReglaCategoria[];
 }): Propuesta {
   const opciones = new Map<string, OpcionCategoria>();
   for (const c of categorias) opciones.set(c.id, { id: c.id, nombre: c.nombre, color: c.color, icono: c.icono, macro: c.macro, nueva: false });
@@ -247,7 +256,11 @@ export function proponerCategorias({
     if (existente) return existente;
     const id = idPreferido || slug(nombre);
     if (!opciones.has(id)) {
-      opciones.set(id, { id, nombre, color: getDeterministaColor(nombre), nueva: true, ...extra });
+      opciones.set(id, {
+        id, nombre, color: getDeterministaColor(nombre), nueva: true,
+        ...(esCategoriaDeTraspaso(nombre) ? { excluirDeAnalisis: true } : {}),
+        ...extra,
+      });
       porNombre.set(normalizarConcepto(nombre), id);
     }
     return id;
@@ -282,10 +295,14 @@ export function proponerCategorias({
     grupo.ids.push(m.id);
     grupo.total += m.importe;
 
+    const deRegla = categoriaPorReglas(m.concepto, reglas);
     const historica = deHistorial(clave);
     const nombreBanco = m.categoria && m.categoria !== SIN_CLASIFICAR ? nombresBanco.get(m.categoria) : undefined;
     const regla = reglaPorPalabra(m.concepto);
-    if (historica) {
+    if (deRegla && opciones.has(deRegla)) {
+      asignacion[m.id] = deRegla;
+      origen[m.id] = 'regla';
+    } else if (historica) {
       asignacion[m.id] = historica;
       origen[m.id] = 'historial';
     } else if (nombreBanco) {
@@ -331,6 +348,7 @@ export function construirImportacion(
       id: o.id, nombre: o.nombre, color: o.color, tipo: 'ambos' as const,
       ...(o.icono ? { icono: o.icono } : {}),
       ...(o.macro ? { macro: o.macro } : {}),
+      ...(o.excluirDeAnalisis ? { excluirDeAnalisis: true } : {}),
     }));
   return { movimientos: finales, nuevasCategorias };
 }

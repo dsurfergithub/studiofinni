@@ -9,7 +9,7 @@ import { useStore } from '../lib/storage/store';
 import { useToast } from '../components/ui/Toast';
 import { playSuccess, playError } from '../lib/audio/sounds';
 import { calcularNombreMes, generarMesesFuturos, mesesRestantesDelAnio } from '../lib/finmes/finmes';
-import { MesFinanciero, Categoria, Movimiento } from '../lib/storage/types';
+import { MesFinanciero, Categoria, Movimiento, ReglaCategoria } from '../lib/storage/types';
 
 const idDeCategoria = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
 
@@ -31,14 +31,14 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
   const { toast } = useToast();
   const [porCategorizar, setPorCategorizar] = useState<{ propuesta: Propuesta; parsed: ParsedResultado } | null>(null);
 
-  const confirmarCategorias = (movimientos: Movimiento[], nuevasCategorias: Categoria[]) => {
+  const confirmarCategorias = (movimientos: Movimiento[], nuevasCategorias: Categoria[], nuevasReglas: ReglaCategoria[]) => {
     if (!porCategorizar) return;
     const { parsed } = porCategorizar;
     setPorCategorizar(null);
     // Se parte de un estado sin categorías: las del extracto (revisadas) son las que valen.
     const base = { ...state, categorias: [], movimientos: [] };
     const { cambios, mesDestino } = volcarExtracto(base, movimientos, nuevasCategorias, parsed);
-    updateState({ ...cambios, hasOnboarded: true, cuenta: { ...(cambios.cuenta || state.cuenta), banco: parsed.banco } });
+    updateState({ ...cambios, reglas: nuevasReglas, hasOnboarded: true, cuenta: { ...(cambios.cuenta || state.cuenta), banco: parsed.banco } });
     if (mesDestino) setSelectedMesId(mesDestino);
     playSuccess();
     onFinish();

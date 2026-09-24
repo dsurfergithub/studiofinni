@@ -35,6 +35,23 @@ export interface Categoria {
   icono?: string;
   tipo: 'gasto' | 'ingreso' | 'ambos';
   macro?: MacroTipo;
+  /**
+   * true = sus movimientos cuentan en el saldo pero NO en ingresos, gastos, presupuesto
+   * ni comparativas. Para el dinero que solo cambia de cuenta (traspasos internos).
+   */
+  excluirDeAnalisis?: boolean;
+}
+
+/**
+ * «Si el concepto contiene X, va a la categoría Y». Se aplica al importar, por encima de
+ * lo que diga el banco o el historial.
+ */
+export interface ReglaCategoria {
+  id: string;
+  /** Texto a buscar, ya normalizado (minúsculas, sin tildes). */
+  texto: string;
+  categoria: string;
+  creada: number;
 }
 
 export interface Suscripcion {
@@ -115,6 +132,8 @@ export interface AppState {
   theme: Theme;
   movimientos: Movimiento[];
   categorias: Categoria[];
+  /** Reglas de categorización que se aplican al importar. */
+  reglas: ReglaCategoria[];
   suscripciones: Suscripcion[];
   nominasAncla: NominaAncla[];
   mesesPersonalizados: MesFinanciero[];

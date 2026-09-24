@@ -4,9 +4,11 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { formatCurrency } from '../lib/utils';
 import { FinMesSelector } from '../components/ui/FinMesSelector';
 import { movimientoEnMes } from '../lib/finmes/finmes';
-import { esAjusteDeSaldo } from '../lib/saldo/cuadre';
 import { ChevronLeft } from 'lucide-react';
 import { Comparativa } from '../components/ui/Comparativa';
+import { GastosRaros } from '../components/ui/GastosRaros';
+import { detectarGastosRaros } from '../lib/insights/raros';
+import { categoriasFueraDeAnalisis, cuentaEnAnalisis } from '../lib/analisis';
 
 interface InsightsProps {
   selectedMesId: string;
@@ -22,12 +24,23 @@ export function Insights({ selectedMesId, onChangeMes }: InsightsProps) {
   const cMes = activeMeses.find(m => m.id === selectedMesId) || activeMeses[0];
 
   const [selectedCat, setSelectedCat] = useState<string | null>(null);
+  // Traspasos entre tus cuentas y demás categorías que no son gasto ni ingreso de verdad.
+  const fuera = useMemo(() => categoriasFueraDeAnalisis(state.categorias), [state.categorias]);
 
   const movsMes = useMemo(() => {
     if (!cMes) return [];
     // Sin ajustes de cuadre: corrigen el saldo, no son gasto ni ingreso analizable.
-    return state.movimientos.filter(m => movimientoEnMes(m, cMes, activeMeses) && !esAjusteDeSaldo(m));
-  }, [state.movimientos, cMes, activeMeses]);
+    return state.movimientos.filter(m => movimientoEnMes(m, cMes, activeMeses) && cuentaEnAnalisis(m, fuera));
+  }, [state.movimientos, cMes, activeMeses, fuera]);
+
+  // Todo lo que cuenta como ingreso o gasto, de cualquier mes: para la comparativa.
+  const movsAnalisis = useMemo(() => state.movimientos.filter(m => cuentaEnAnalisis(m, fuera)), [state.movimientos, fuera]);
+
+  // Categorías que este periodo van claramente por encima de lo habitual.
+  const raros = useMemo(
+    () => (cMes ? detectarGastosRaros(state.movimientos, activeMeses, cMes, fuera) : []),
+    [state.movimientos, activeMeses, cMes, fuera]
+  );
 
   // Cashflow
   const { ingresos, gastos } = useMemo(() => {
@@ -73,7 +86,7 @@ export function Insights({ selectedMesId, onChangeMes }: InsightsProps) {
     const mesActual = new Date().getMonth(); // 0-based
     const totales = new Array(12).fill(0);
     state.movimientos.forEach(m => {
-      if (m.importe < 0 && !esAjusteDeSaldo(m) && m.fecha.startsWith(String(year))) {
+      if (m.importe < 0 && cuentaEnAnalisis(m, fuera) && m.fecha.startsWith(String(year))) {
         const mesIdx = parseInt(m.fecha.slice(5, 7), 10) - 1;
         totales[mesIdx] += Math.abs(m.importe);
       }
@@ -83,7 +96,7 @@ export function Insights({ selectedMesId, onChangeMes }: InsightsProps) {
       acumulado += val;
       return { name: MES_CORTO[i], gasto: val, acumulado };
     });
-  }, [state.movimientos]);
+  }, [state.movimientos, fuera]);
 
   const totalAnual = gastoMensualAnual.reduce((acc, m) => acc + m.gasto, 0);
   const mediaMensual = gastoMensualAnual.length > 0 ? totalAnual / gastoMensualAnual.length : 0;
@@ -130,6 +143,8 @@ export function Insights({ selectedMesId, onChangeMes }: InsightsProps) {
             <p className={`text-sm font-mono font-bold truncate ${balance >= 0 ? 'text-success' : 'text-danger'}`}>{formatCurrency(balance)}</p>
           </div>
         </div>
+
+        <GastosRaros raros={raros} categorias={state.categorias} onSelect={setSelectedCat} />
 
         {/* ¿En qué se va tu dinero? con drill-down */}
         <section className="bg-surface border border-border rounded-3xl p-5 shadow-card">
@@ -234,7 +249,7 @@ export function Insights({ selectedMesId, onChangeMes }: InsightsProps) {
         </section>
 
         {/* Un mes contra otro (enero 2026 contra enero 2025) o año contra año. */}
-        <Comparativa movimientos={state.movimientos} categorias={state.categorias} mesInicial={cMes?.clave} />
+        <Comparativa movimientos={movsAnalisis} categorias={state.categorias} mesInicial={cMes?.clave} />
 
       </div>
     </div>

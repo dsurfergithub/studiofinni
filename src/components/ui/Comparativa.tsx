@@ -344,7 +344,7 @@ export function Comparativa({ movimientos, categorias, mesInicial }: {
         </>
       )}
 
-      <p className="text-[10px] text-dim">Por mes natural, del 1 al último día. Sin los ajustes de cuadre.</p>
+      <p className="text-[10px] text-dim">Por mes natural, del 1 al último día. Sin ajustes de cuadre ni categorías fuera del análisis (traspasos).</p>
     </section>
   );
 }
