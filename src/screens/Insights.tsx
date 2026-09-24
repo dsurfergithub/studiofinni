@@ -6,6 +6,7 @@ import { FinMesSelector } from '../components/ui/FinMesSelector';
 import { movimientoEnMes } from '../lib/finmes/finmes';
 import { esAjusteDeSaldo } from '../lib/saldo/cuadre';
 import { ChevronLeft } from 'lucide-react';
+import { Comparativa } from '../components/ui/Comparativa';
 
 interface InsightsProps {
   selectedMesId: string;
@@ -231,6 +232,9 @@ export function Insights({ selectedMesId, onChangeMes }: InsightsProps) {
             </ResponsiveContainer>
           </div>
         </section>
+
+        {/* Un mes contra otro (enero 2026 contra enero 2025) o año contra año. */}
+        <Comparativa movimientos={state.movimientos} categorias={state.categorias} mesInicial={cMes?.clave} />
 
       </div>
     </div>
