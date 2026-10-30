@@ -152,12 +152,15 @@ export function loadState(): AppState {
   }
 }
 
-export function saveState(state: AppState): void {
+/** Guarda el estado. Devuelve false si el navegador no lo ha dejado escribir. */
+export function saveState(state: AppState): boolean {
   try {
     state.meta.ultimaModificacion = Date.now();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    return true;
   } catch (error) {
     console.error('Failed to save state to localStorage', error);
+    return false;
   }
 }
 
@@ -178,17 +181,20 @@ export function getBackups(): BackupSnapshot[] {
   }
 }
 
-function setBackups(backups: BackupSnapshot[]) {
+function setBackups(backups: BackupSnapshot[]): boolean {
   try {
     localStorage.setItem(BACKUP_KEY, JSON.stringify(backups));
+    return true;
   } catch (error) {
     console.error('Failed to persist backups', error);
+    return false;
   }
 }
 
 /**
  * Crea un snapshot si ha pasado más de una semana desde el último auto-backup.
- * Devuelve el nuevo timestamp si hizo backup, o null si no tocaba.
+ * Devuelve el nuevo timestamp si hizo backup, o null si no tocaba o no se pudo guardar
+ * (así no se apunta como hecha una copia que no existe y se reintenta la próxima vez).
  */
 export function maybeWeeklyBackup(state: AppState): number | null {
   const last = state.meta.ultimoAutoBackup || 0;
@@ -199,12 +205,12 @@ export function maybeWeeklyBackup(state: AppState): number | null {
 
   const backups = getBackups();
   backups.unshift({ fecha: now, data: state });
-  setBackups(backups.slice(0, MAX_BACKUPS));
-  return now;
+  return setBackups(backups.slice(0, MAX_BACKUPS)) ? now : null;
 }
 
-export function createManualBackup(state: AppState): void {
+/** Copia en este dispositivo. Devuelve false si no se ha podido guardar. */
+export function createManualBackup(state: AppState): boolean {
   const backups = getBackups();
   backups.unshift({ fecha: Date.now(), data: state });
-  setBackups(backups.slice(0, MAX_BACKUPS));
+  return setBackups(backups.slice(0, MAX_BACKUPS));
 }

@@ -339,6 +339,7 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
     a.download = `finni_backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    updateState({ meta: { ...state.meta, ultimaExportacion: Date.now() } });
     playSuccess();
     toast('Backup descargado. Guárdalo en un lugar seguro.', 'ok');
   };
@@ -370,10 +371,14 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
         if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.movimientos)) {
           throw new Error('El archivo no parece un backup válido de Finni.');
         }
-        if (!window.confirm('Esto reemplazará todos tus datos actuales por los del backup. ¿Continuar?')) return;
+        if (!window.confirm('Esto reemplazará todos tus datos actuales por los del backup. Antes guardaré una copia de lo que tienes ahora. ¿Continuar?')) return;
+        const copiaPrevia = createManualBackup(state);
+        setBackups(getBackups());
         importState(migrate(parsed));
         playSuccess();
-        toast('Backup restaurado correctamente.', 'ok');
+        toast(copiaPrevia
+          ? 'Backup restaurado. Tus datos anteriores quedan en la lista de copias de Ajustes.'
+          : 'Backup restaurado, pero no se pudo guardar copia de tus datos anteriores.', copiaPrevia ? 'ok' : 'error');
       } catch (err) {
         playError();
         toast((err as Error).message || 'No se pudo leer el backup.', 'error');
@@ -386,12 +391,19 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
   const handleRestoreSnapshot = (ts: number) => {
     const snap = getBackups().find(b => b.fecha === ts);
     if (!snap) return;
-    if (!window.confirm(`¿Restaurar la copia del ${new Date(ts).toLocaleString('es-ES')}? Se reemplazarán tus datos actuales.`)) return;
+    if (!window.confirm(`¿Restaurar la copia del ${new Date(ts).toLocaleString('es-ES')}? Se reemplazarán tus datos actuales (antes guardaré una copia de ellos).`)) return;
+    const copiaPrevia = createManualBackup(state);
+    setBackups(getBackups());
     importState(migrate(snap.data));
     playSuccess();
+    if (!copiaPrevia) toast('Copia restaurada, pero no se pudo guardar copia de tus datos anteriores.', 'error');
   };
 
   const lastBackup = state.meta.ultimoAutoBackup;
+  const lastExport = state.meta.ultimaExportacion;
+  // Las copias automáticas viven en el mismo navegador que los datos: si se borra, se van
+  // juntas. Pasado un mes sin descargar una copia, se recuerda.
+  const exportVieja = !lastExport || Date.now() - lastExport > 30 * 24 * 60 * 60 * 1000;
 
   return (
     <div className="flex-1 flex flex-col pt-safe pb-24 h-screen overflow-y-auto">
@@ -562,6 +574,18 @@ export function Ajustes({ onNavigate }: { onNavigate?: (tab: string) => void }) 
               <p className="text-muted">{lastBackup ? `Última copia automática: ${new Date(lastBackup).toLocaleDateString('es-ES')}` : 'Se creará una copia al usar la app durante una semana.'}</p>
             </div>
           </div>
+
+          {exportVieja && (state.movimientos.length > 0 || !!state.cuenta.fechaSaldo) && (
+            <div className="bg-warning/10 border border-warning/40 rounded-2xl p-4 text-xs space-y-2">
+              <p className="font-bold text-text">
+                {lastExport
+                  ? `No descargas una copia desde el ${new Date(lastExport).toLocaleDateString('es-ES')}`
+                  : 'Aún no has descargado ninguna copia'}
+              </p>
+              <p className="text-muted">Las copias automáticas se guardan en este mismo navegador. Si se borran sus datos o cambias de móvil, se pierden con todo lo demás. Descarga una y guárdala en Archivos, iCloud o tu correo.</p>
+              <button onClick={handleDownloadBackup} className="font-bold text-accent">Descargar copia ahora</button>
+            </div>
+          )}
 
           {backups.length > 0 && (
             <div className="bg-surface border border-border rounded-2xl overflow-hidden divide-y divide-border">
