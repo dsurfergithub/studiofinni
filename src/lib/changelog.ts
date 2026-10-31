@@ -1,7 +1,7 @@
 // Historial de versiones de la app. Añade una entrada nueva al principio en cada
 // actualización: es lo que ve el usuario en el aviso de novedades y en Ajustes.
 
-export const APP_VERSION = '2.10.0';
+export const APP_VERSION = '2.11.0';
 
 export type TipoCambio = 'nuevo' | 'mejora' | 'arreglo';
 
@@ -13,6 +13,19 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.11.0',
+    fecha: '2026-10-30',
+    titulo: 'Quitar presupuestos sin sorpresas',
+    cambios: [
+      { tipo: 'arreglo', texto: 'Un presupuesto puesto "solo para este mes" ya se puede quitar: antes aparecía en la lista pero sin botón para borrarlo.' },
+      { tipo: 'nuevo', texto: 'Al quitar un presupuesto eliges el alcance: solo este mes (aunque haya límite general), desde este mes en adelante (los meses pasados conservan el suyo) o de todos los meses. Aparece un aviso con "Deshacer" y tus movimientos no se tocan.' },
+      { tipo: 'mejora', texto: '0 € y "sin presupuesto" ya no se confunden: un límite de 0 € sigue en la lista y cualquier gasto cuenta como exceso; para que una categoría no tenga presupuesto, quítalo.' },
+      { tipo: 'arreglo', texto: '"Dinero restante al acabar el mes" ya no compensa un exceso en una categoría con lo que aún te queda en otra: si te pasas 100 € en alimentación, los 100 € previstos para ocio siguen restando.' },
+      { tipo: 'arreglo', texto: 'Si el navegador no puede guardar tus cambios (sin espacio, modo privado…), lo ves en un aviso en vez de perderlos sin saberlo. La copia automática solo se da por hecha si de verdad se ha guardado.' },
+      { tipo: 'nuevo', texto: 'Antes de restaurar un backup se guarda una copia de tus datos actuales. Y si hace más de un mes que no descargas una copia, Ajustes te lo recuerda: las automáticas viven en el mismo navegador que tus datos.' },
+    ],
+  },
   {
     version: '2.10.0',
     fecha: '2026-09-24',

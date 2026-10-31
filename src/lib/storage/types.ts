@@ -141,8 +141,9 @@ export interface AppState {
   cierres: Record<string, CierreMes>;
   // Presupuesto base por categoría (se aplica a todos los meses salvo override).
   budgetTemplate: Record<string, number>;
-  // Presupuesto específico por mes: { [mesId]: { [catId]: importe } }
-  budgetOverrides: Record<string, Record<string, number>>;
+  // Presupuesto específico por mes: { [mesId]: { [catId]: importe } }. `null` = ese mes
+  // sin presupuesto aunque haya límite general; 0 es un límite de cero euros.
+  budgetOverrides: Record<string, Record<string, number | null>>;
   savingsGoal: number;
   savingsAcumulado: number;
   savingsMetas: SavingsMeta[];
@@ -157,5 +158,6 @@ export interface AppState {
     creadoEn: number;
     ultimaModificacion: number;
     ultimoAutoBackup?: number; // timestamp del último backup automático
+    ultimaExportacion?: number; // timestamp del último backup descargado fuera de la app
   };
 }

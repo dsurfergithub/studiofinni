@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { migrate } from '../storage/storage';
+import { describe, it, expect, vi } from 'vitest';
+import { migrate, saveState, maybeWeeklyBackup, getInitialState } from '../storage/storage';
 
 describe('migrate', () => {
   it('migra un estado v1 hasta el esquema actual sin perder datos', () => {
@@ -81,5 +81,46 @@ describe('migración a v6', () => {
     expect(s.schemaVersion).toBe(6);
     expect(s.reglas).toEqual([]);
     expect(s.categorias.map(c => c.excluirDeAnalisis)).toEqual([true, undefined, false]);
+  });
+});
+
+describe('guardado fiable', () => {
+  const memoria = (falla: (k: string) => boolean) => {
+    const datos: Record<string, string> = {};
+    return {
+      getItem: (k: string) => datos[k] ?? null,
+      setItem: (k: string, v: string) => {
+        if (falla(k)) throw new Error('QuotaExceededError');
+        datos[k] = v;
+      },
+      removeItem: (k: string) => { delete datos[k]; },
+      clear: () => {},
+      key: () => null,
+      length: 0,
+    } as Storage;
+  };
+
+  const conDatos = () => {
+    const s = getInitialState();
+    s.movimientos = [{ id: 'a', fecha: '2026-01-01', importe: -5, concepto: 'x', categoria: 'c', fuente: 'manual', hash: 'h' }];
+    return s;
+  };
+
+  it('saveState avisa cuando el navegador no deja escribir', () => {
+    vi.stubGlobal('localStorage', memoria(() => true));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(saveState(getInitialState())).toBe(false);
+    vi.stubGlobal('localStorage', memoria(() => false));
+    expect(saveState(getInitialState())).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('una copia automática que no se ha escrito no se da por hecha', () => {
+    vi.stubGlobal('localStorage', memoria(k => k === 'finni_backups'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(maybeWeeklyBackup(conDatos())).toBeNull();
+    vi.stubGlobal('localStorage', memoria(() => false));
+    expect(maybeWeeklyBackup(conDatos())).toEqual(expect.any(Number));
+    vi.unstubAllGlobals();
   });
 });

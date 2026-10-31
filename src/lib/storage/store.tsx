@@ -6,6 +6,10 @@ import { generarCargosSuscripciones } from '../suscripciones/suscripciones';
 import { getLocalFechaIso } from '../utils';
 import { calcularSaldo, prepararCuadre, CATEGORIA_AJUSTE, Cuadre } from '../saldo/cuadre';
 import { prepararCierre, Cierre } from '../cierre/cierre';
+import {
+  AlcanceQuitar, Presupuestos, limiteDe, ponerLimiteGeneral, ponerLimiteDelMes, quitarPresupuesto,
+} from '../presupuesto/presupuesto';
+import { useToast } from '../../components/ui/Toast';
 import { v4 as uuidv4 } from 'uuid';
 
 export type PlanAmbito = 'plan' | 'escenario';
@@ -28,9 +32,11 @@ interface StoreContextType {
   // Presupuesto independiente del catálogo de categorías
   isBudgeted: (catId: string) => boolean;
   getPresupuestoCat: (catId: string, mesId: string) => number;
-  setBudgetTemplate: (catId: string, amount: number) => void;
+  setBudgetTemplate: (catId: string, amount: number, mesId: string) => void;
   setBudgetForMonth: (catId: string, mesId: string, amount: number) => void;
-  removeFromBudget: (catId: string) => void;
+  /** Quita el presupuesto con el alcance dado y devuelve cómo estaba, para deshacer. */
+  removeFromBudget: (catId: string, alcance: AlcanceQuitar, mes: MesFinanciero) => Presupuestos;
+  restoreBudget: (prev: Presupuestos) => void;
   // Plan anual (planificación manual): ambito 'plan' (base) o 'escenario' (¿y si…?)
   getPlanFilas: (year: string, ambito?: PlanAmbito) => PlanFila[];
   setPlanCell: (year: string, monthIdx: number, key: string, value: number, ambito?: PlanAmbito) => void;
@@ -104,9 +110,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setInitDone(true);
   }, []);
 
-  // Persistencia.
+  // Persistencia. Si el navegador no deja guardar (sin espacio, modo privado…) se avisa
+  // una vez por racha de fallos: lo cambiado solo vive en esta pestaña hasta que se pueda.
+  const { toast } = useToast();
+  const [guardadoFallido, setGuardadoFallido] = useState(false);
   useEffect(() => {
-    if (initDone) saveState(state);
+    if (!initDone) return;
+    const ok = saveState(state);
+    if (!ok && !guardadoFallido) {
+      toast('No se han podido guardar los cambios en este dispositivo. Descarga un backup desde Ajustes para no perderlos.', 'error');
+    } else if (ok && guardadoFallido) {
+      toast('Los cambios vuelven a guardarse.', 'ok');
+    }
+    if (ok === guardadoFallido) setGuardadoFallido(!ok);
   }, [state, initDone]);
 
   // Aplica el tema al documento.
@@ -279,47 +295,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const isBudgeted = (catId: string) =>
     Object.prototype.hasOwnProperty.call(state.budgetTemplate || {}, catId);
 
-  const getPresupuestoCat = (catId: string, mesId: string) => {
-    const override = state.budgetOverrides?.[mesId]?.[catId];
-    if (override !== undefined) return override;
-    const template = state.budgetTemplate?.[catId];
-    return template !== undefined ? template : 0;
-  };
+  const getPresupuestoCat = (catId: string, mesId: string) => limiteDe(state, catId, mesId) ?? 0;
 
-  const setBudgetTemplate = (catId: string, amount: number) => {
-    setState((prev) => ({
-      ...prev,
-      budgetTemplate: { ...prev.budgetTemplate, [catId]: amount },
-    }));
+  const setBudgetTemplate = (catId: string, amount: number, mesId: string) => {
+    setState((prev) => ({ ...prev, ...ponerLimiteGeneral(prev, catId, amount, mesId) }));
   };
 
   const setBudgetForMonth = (catId: string, mesId: string, amount: number) => {
-    setState((prev) => {
-      const monthOverrides = prev.budgetOverrides?.[mesId] || {};
-      return {
-        ...prev,
-        budgetOverrides: {
-          ...(prev.budgetOverrides || {}),
-          [mesId]: { ...monthOverrides, [catId]: amount },
-        },
-      };
-    });
+    setState((prev) => ({ ...prev, ...ponerLimiteDelMes(prev, catId, amount, mesId) }));
   };
 
-  const removeFromBudget = (catId: string) => {
-    setState((prev) => {
-      const newOverrides = { ...prev.budgetOverrides };
-      Object.keys(newOverrides).forEach(monthId => {
-        newOverrides[monthId] = Object.fromEntries(
-          Object.entries(newOverrides[monthId] || {}).filter(([k]) => k !== catId)
-        );
-      });
-      return {
-        ...prev,
-        budgetTemplate: Object.fromEntries(Object.entries(prev.budgetTemplate).filter(([k]) => k !== catId)),
-        budgetOverrides: newOverrides,
-      };
-    });
+  const removeFromBudget = (catId: string, alcance: AlcanceQuitar, mes: MesFinanciero): Presupuestos => {
+    const anterior = { budgetTemplate: state.budgetTemplate, budgetOverrides: state.budgetOverrides };
+    setState((prev) => ({ ...prev, ...quitarPresupuesto(prev, catId, alcance, mes, getMesesActivos()) }));
+    return anterior;
+  };
+
+  const restoreBudget = (prev: Presupuestos) => {
+    setState((s) => ({ ...s, budgetTemplate: prev.budgetTemplate, budgetOverrides: prev.budgetOverrides }));
   };
 
   // ---------- Plan anual (planificación manual) ----------
@@ -469,6 +462,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setBudgetTemplate,
         setBudgetForMonth,
         removeFromBudget,
+        restoreBudget,
         getPlanFilas,
         setPlanCell,
         copiarFilaPlan,

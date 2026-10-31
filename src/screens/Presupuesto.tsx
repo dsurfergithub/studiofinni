@@ -10,6 +10,9 @@ import { SavingsMeta } from '../lib/storage/types';
 import { v4 as uuidv4 } from 'uuid';
 import { Plus, Tag, Sparkle, PiggyBank } from 'lucide-react';
 import { categoriasFueraDeAnalisis, cuentaEnAnalisis } from '../lib/analisis';
+import {
+  AlcanceQuitar, alcancesPosibles, categoriasConPresupuesto, pendientePorCategoria,
+} from '../lib/presupuesto/presupuesto';
 
 interface PresupuestoProps {
   selectedMesId: string;
@@ -28,7 +31,7 @@ function barColor(perc: number) {
 export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: PresupuestoProps) {
   const {
     state, getMesesActivos, updateState, addMovimiento, addCategoria, getSaldoCalculado,
-    isBudgeted, getPresupuestoCat, setBudgetTemplate, setBudgetForMonth, removeFromBudget,
+    getPresupuestoCat, setBudgetTemplate, setBudgetForMonth, removeFromBudget, restoreBudget,
   } = useStore();
   const { toast } = useToast();
 
@@ -36,6 +39,7 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [amountVal, setAmountVal] = useState('');
   const [scopeAllMonths, setScopeAllMonths] = useState(true);
+  const [quitarOpen, setQuitarOpen] = useState(false);
 
   // Savings meta state
   const [metaEditorOpen, setMetaEditorOpen] = useState(false);
@@ -66,11 +70,9 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
     });
   }
 
-  // Categorías con presupuesto en este mes (template global u override del mes).
-  const budgetedIds = new Set<string>([
-    ...Object.keys(state.budgetTemplate || {}),
-    ...Object.keys(state.budgetOverrides?.[selectedMesId] || {}),
-  ]);
+  // Categorías con presupuesto en este mes (template global u override del mes), sin las
+  // que se han quitado solo para este mes.
+  const budgetedIds = categoriasConPresupuesto(state, selectedMesId);
   const budgetedCats = state.categorias
     .filter(c => budgetedIds.has(c.id))
     .map(c => ({ cat: c, budget: getPresupuestoCat(c.id, selectedMesId), spent: spentPerCat[c.id] || 0 }))
@@ -90,9 +92,10 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
 
   // Foto de cómo acabará el mes: el saldo de hoy menos el presupuesto que AÚN no se ha
   // gastado. Lo ya gastado no se resta otra vez (el saldo real ya lo refleja) y un
-  // presupuesto excedido no devuelve dinero, de ahí el max(0, ...).
+  // presupuesto excedido no devuelve dinero. Se cuenta categoría a categoría: pasarse en
+  // una no hace desaparecer lo que aún tienes previsto gastar en otra.
   const saldoReal = getSaldoCalculado();
-  const presupuestoPendiente = Math.max(0, disponible);
+  const presupuestoPendiente = pendientePorCategoria(budgetedCats);
   const saldoProyectado = saldoReal - presupuestoPendiente;
   const gastoRealMes = totalGastado + gastoPuntual + sinPresupuesto.reduce((acc, s) => acc + s.spent, 0);
 
@@ -103,6 +106,7 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
     setEditingCatId(catId);
     setAmountVal(String(getPresupuestoCat(catId, selectedMesId) || ''));
     setScopeAllMonths(!(state.budgetOverrides?.[selectedMesId]?.[catId] !== undefined));
+    setQuitarOpen(false);
     setEditorOpen(true);
   };
 
@@ -110,6 +114,7 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
     setEditingCatId(presetCatId || null);
     setAmountVal('');
     setScopeAllMonths(true);
+    setQuitarOpen(false);
     setEditorOpen(true);
   };
 
@@ -118,19 +123,24 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
     const val = parseFloat(amountVal.replace(',', '.'));
     if (isNaN(val) || val < 0) return;
     if (scopeAllMonths) {
-      setBudgetTemplate(editingCatId, val);
+      setBudgetTemplate(editingCatId, val, selectedMesId);
     } else {
       setBudgetForMonth(editingCatId, selectedMesId, val);
     }
     setEditorOpen(false);
   };
 
-  const handleRemoveBudget = () => {
-    if (!editingCatId) return;
-    if (window.confirm('¿Quitar el presupuesto de esta categoría? Sus gastos seguirán registrados.')) {
-      removeFromBudget(editingCatId);
-      setEditorOpen(false);
-    }
+  const handleRemoveBudget = (alcance: AlcanceQuitar) => {
+    if (!editingCatId || !cMes) return;
+    const nombre = state.categorias.find(c => c.id === editingCatId)?.nombre || 'La categoría';
+    const anterior = removeFromBudget(editingCatId, alcance, cMes);
+    setEditorOpen(false);
+    const mensaje = alcance === 'mes'
+      ? `${nombre} queda sin presupuesto en ${nombreMes}.`
+      : alcance === 'desde'
+        ? `${nombre} queda sin presupuesto desde ${nombreMes}. Los meses anteriores lo conservan.`
+        : `${nombre} queda sin presupuesto en todos los meses.`;
+    toast(mensaje, 'ok', { accion: { texto: 'Deshacer', onClick: () => restoreBudget(anterior) } });
   };
 
   // ---- Savings handlers ----
@@ -201,6 +211,27 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
   };
 
   const catsDisponiblesParaPresupuestar = state.categorias.filter(c => c.tipo !== 'ingreso' && !budgetedIds.has(c.id));
+  const nombreMes = cMes?.nombre.split(' ')[0].toLowerCase() || 'este mes';
+  const tieneLimiteEsteMes = !!editingCatId && budgetedIds.has(editingCatId);
+  const limiteGeneral = editingCatId ? state.budgetTemplate?.[editingCatId] : undefined;
+  const alcances = editingCatId && cMes && tieneLimiteEsteMes ? alcancesPosibles(state, editingCatId, cMes, activeMeses) : [];
+  const OPCIONES_QUITAR: Record<AlcanceQuitar, { titulo: string; detalle: string }> = {
+    mes: {
+      titulo: `Solo ${nombreMes}`,
+      detalle: limiteGeneral !== undefined
+        ? `El resto de meses mantienen su límite de ${formatCurrency(limiteGeneral)}.`
+        : 'Los demás meses no cambian.',
+    },
+    desde: {
+      titulo: `Desde ${nombreMes} en adelante`,
+      detalle: 'Los meses anteriores conservan el límite que tenían.',
+    },
+    todos: {
+      titulo: 'De todos los meses',
+      detalle: 'También de los meses pasados: el histórico se verá sin límite en esta categoría.',
+    },
+  };
+  const valorLimite = parseFloat(amountVal.replace(',', '.'));
 
   return (
     <div className="flex-1 flex flex-col pt-safe pb-24 h-screen overflow-y-auto">
@@ -376,7 +407,7 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
       </div>
 
       {/* Budget editor */}
-      <Sheet isOpen={editorOpen} onClose={() => setEditorOpen(false)} title={editingCatId && isBudgeted(editingCatId) ? 'Editar presupuesto' : 'Nuevo presupuesto'}>
+      <Sheet isOpen={editorOpen} onClose={() => setEditorOpen(false)} title={tieneLimiteEsteMes ? 'Editar presupuesto' : 'Nuevo presupuesto'}>
         <div className="space-y-6 pb-6 mt-4">
           {!editingCatId && (
             <div className="space-y-2">
@@ -397,6 +428,7 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
             </p>
           )}
 
+          {!quitarOpen && (<>
           <div className="space-y-2">
             <label className="text-xs font-bold text-muted uppercase tracking-wider">Límite</label>
             <div className="relative">
@@ -404,6 +436,12 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
               <input type="number" inputMode="decimal" step="5" value={amountVal} onChange={e => setAmountVal(e.target.value)}
                 className="w-full bg-surface border border-border rounded-xl pl-12 pr-4 py-4 text-3xl font-black font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-text" />
             </div>
+            {valorLimite === 0 && (
+              <p className="text-[11px] text-muted">
+                Con 0 € la categoría sigue en el presupuesto con límite cero: cualquier gasto contará como exceso.
+                {tieneLimiteEsteMes && ' Si lo que quieres es que no tenga presupuesto, usa «Quitar presupuesto».'}
+              </p>
+            )}
           </div>
 
           {/* Alcance */}
@@ -416,14 +454,29 @@ export function Presupuesto({ selectedMesId, onChangeMes, onNavigate }: Presupue
               </button>
               <button type="button" onClick={() => setScopeAllMonths(false)}
                 className={`py-3 px-2 rounded-xl text-sm font-bold transition-all ${!scopeAllMonths ? 'bg-accent text-white ring-2 ring-accent' : 'bg-surface-elevated text-muted border border-border'}`}>
-                Solo {cMes?.nombre.split(' ')[0].toLowerCase()}
+                Solo {nombreMes}
               </button>
             </div>
           </div>
 
           <Button onClick={handleSaveBudget} disabled={!editingCatId || amountVal === ''} className="w-full h-14 text-lg font-bold">Guardar límite</Button>
-          {editingCatId && isBudgeted(editingCatId) && (
-            <Button variant="danger" onClick={handleRemoveBudget} className="w-full h-12 text-base font-bold bg-transparent border border-border">Quitar del presupuesto</Button>
+          </>)}
+          {tieneLimiteEsteMes && !quitarOpen && (
+            <Button variant="danger" onClick={() => setQuitarOpen(true)} className="w-full h-12 text-base font-bold bg-transparent border border-border">Quitar presupuesto</Button>
+          )}
+          {tieneLimiteEsteMes && quitarOpen && (
+            <div className="space-y-2 bg-surface-elevated rounded-2xl p-4 border border-danger/30">
+              <p className="text-xs font-bold text-muted uppercase tracking-wider">¿De qué meses lo quitas?</p>
+              {alcances.map(alcance => (
+                <button key={alcance} type="button" onClick={() => handleRemoveBudget(alcance)}
+                  className="w-full text-left bg-surface border border-border hover:border-danger/50 rounded-xl px-4 py-3 transition-colors">
+                  <p className="text-sm font-bold text-danger">{OPCIONES_QUITAR[alcance].titulo}</p>
+                  <p className="text-[11px] text-muted mt-0.5">{OPCIONES_QUITAR[alcance].detalle}</p>
+                </button>
+              ))}
+              <p className="text-[11px] text-muted pt-1">Tus movimientos no se borran en ningún caso.</p>
+              <button type="button" onClick={() => setQuitarOpen(false)} className="w-full text-sm font-bold text-muted py-2">Cancelar</button>
+            </div>
           )}
         </div>
       </Sheet>
